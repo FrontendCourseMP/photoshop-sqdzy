@@ -21,7 +21,7 @@ function App() {
 
   const [image, setImage] = useState<LoadedRasterImage | null>(null)
   const [isBusy, setIsBusy] = useState(false)
-  const [message, setMessage] = useState('Готов к загрузке PNG и JPG.')
+  const [message, setMessage] = useState('Готов к загрузке PNG, JPG и GB7.')
   const [stageSize, setStageSize] = useState<StageSize>(EMPTY_STAGE_SIZE)
 
   useEffect(() => {
@@ -151,8 +151,8 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#2a2b2f] text-zinc-100">
-      <div className="grid min-h-screen grid-rows-[auto_1fr_auto]">
+    <div className="min-h-[100svh] bg-[#2a2b2f] text-zinc-100">
+      <div className="grid min-h-[100svh] grid-rows-[auto_minmax(0,1fr)_auto]">
         <header className="border-b border-black/30 bg-[#313238]">
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 sm:px-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -182,16 +182,19 @@ function App() {
               >
                 Скачать JPG
               </button>
-            </div>
 
-            <div className="ml-auto min-w-0 max-w-full rounded-full border border-white/[0.08] bg-black/10 px-3 py-1 text-xs text-zinc-400">
-              <span className="block truncate">
-                {image ? image.name : 'Поддерживаются PNG и JPG'}
-              </span>
+              <button
+                className="rounded-md border border-white/10 bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={!image || isBusy}
+                onClick={() => void handleExport('image/x-graybit7')}
+                type="button"
+              >
+                Скачать GB7
+              </button>
             </div>
 
             <input
-              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+              accept=".png,.jpg,.jpeg,.gb7,image/png,image/jpeg,image/x-graybit7"
               className="hidden"
               onChange={handleFileChange}
               ref={inputRef}
@@ -200,7 +203,7 @@ function App() {
           </div>
         </header>
 
-        <main className="min-h-0 overflow-hidden bg-[#2b2c31] p-3 sm:p-4">
+        <main className="min-h-0 overflow-x-hidden overflow-y-auto bg-[#2b2c31] p-3 sm:p-4">
           <section
             className="flex h-full min-h-0 rounded-[18px] border border-white/[0.08] bg-[#2f3035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] sm:p-5"
             ref={stageRef}
@@ -217,7 +220,7 @@ function App() {
                     Canvas
                   </p>
                   <p className="mt-4 text-balance text-lg font-medium text-zinc-100">
-                    Открой PNG или JPG, чтобы отобразить изображение
+                    Открой PNG, JPG или GB7, чтобы отобразить изображение
                   </p>
                   <p className="mt-3 text-sm leading-6 text-zinc-400">
                     Холст автоматически подстроится под размер рабочей области,
