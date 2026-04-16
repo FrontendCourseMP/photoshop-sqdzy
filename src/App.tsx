@@ -18,9 +18,11 @@ function App() {
   const inputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  const fileMenuRef = useRef<HTMLDivElement>(null)
 
   const [image, setImage] = useState<LoadedRasterImage | null>(null)
   const [isBusy, setIsBusy] = useState(false)
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false)
   const [message, setMessage] = useState('Готов к загрузке PNG, JPG и GB7.')
   const [stageSize, setStageSize] = useState<StageSize>(EMPTY_STAGE_SIZE)
 
@@ -46,6 +48,34 @@ function App() {
 
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (!isFileMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const targetNode = event.target as Node | null
+
+      if (targetNode && !fileMenuRef.current?.contains(targetNode)) {
+        setIsFileMenuOpen(false)
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsFileMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isFileMenuOpen])
 
   useEffect(() => {
     return () => {
@@ -150,47 +180,81 @@ function App() {
     }
   }
 
+  function handleOpenFromMenu() {
+    setIsFileMenuOpen(false)
+    inputRef.current?.click()
+  }
+
+  function handleExportFromMenu(mimeType: SupportedRasterMimeType) {
+    setIsFileMenuOpen(false)
+    void handleExport(mimeType)
+  }
+
   return (
     <div className="min-h-[100svh] bg-[#2a2b2f] text-zinc-100">
       <div className="grid min-h-[100svh] grid-rows-[auto_minmax(0,1fr)_auto]">
         <header className="border-b border-black/30 bg-[#313238]">
           <div className="flex flex-wrap items-center gap-2 px-3 py-2.5 sm:px-4">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="relative" ref={fileMenuRef}>
               <button
                 className="rounded-md border border-white/10 bg-white/[0.08] px-3 py-1.5 text-sm font-medium text-zinc-100 transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={isBusy}
-                onClick={() => inputRef.current?.click()}
+                onClick={() => setIsFileMenuOpen((currentValue) => !currentValue)}
+                aria-expanded={isFileMenuOpen}
+                aria-haspopup="menu"
                 type="button"
               >
-                {isBusy ? 'Обработка…' : 'Открыть'}
+                Файл
               </button>
 
-              <button
-                className="rounded-md border border-white/10 bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!image || isBusy}
-                onClick={() => void handleExport('image/png')}
-                type="button"
-              >
-                Скачать PNG
-              </button>
+              {isFileMenuOpen ? (
+                <div
+                  className="absolute left-0 top-[calc(100%+8px)] z-40 min-w-[220px] rounded-md border border-white/[0.1] bg-[#2f3035] p-1 shadow-[0_14px_30px_rgba(0,0,0,0.5)]"
+                  role="menu"
+                >
+                  <button
+                    className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm text-zinc-100 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-500"
+                    disabled={isBusy}
+                    onClick={handleOpenFromMenu}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Открыть...
+                  </button>
 
-              <button
-                className="rounded-md border border-white/10 bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!image || isBusy}
-                onClick={() => void handleExport('image/jpeg')}
-                type="button"
-              >
-                Скачать JPG
-              </button>
+                  <div className="my-1 h-px bg-white/[0.08]" />
 
-              <button
-                className="rounded-md border border-white/10 bg-transparent px-3 py-1.5 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
-                disabled={!image || isBusy}
-                onClick={() => void handleExport('image/x-graybit7')}
-                type="button"
-              >
-                Скачать GB7
-              </button>
+                  <button
+                    className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm text-zinc-100 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-500"
+                    disabled={!image || isBusy}
+                    onClick={() => handleExportFromMenu('image/png')}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Сохранить как PNG
+                  </button>
+
+                  <button
+                    className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm text-zinc-100 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-500"
+                    disabled={!image || isBusy}
+                    onClick={() => handleExportFromMenu('image/jpeg')}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Сохранить как JPG
+                  </button>
+
+                  <button
+                    className="flex w-full items-center justify-between rounded px-2.5 py-1.5 text-left text-sm text-zinc-100 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:text-zinc-500"
+                    disabled={!image || isBusy}
+                    onClick={() => handleExportFromMenu('image/x-graybit7')}
+                    role="menuitem"
+                    type="button"
+                  >
+                    Сохранить как GB7
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             <input
