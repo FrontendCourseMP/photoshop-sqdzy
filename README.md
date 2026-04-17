@@ -1,3 +1,7 @@
+## Деплой
+
+https://photoshop-sqdzy.onrender.com
+
 ## Поддерживаемые форматы
 
 - PNG
