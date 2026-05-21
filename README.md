@@ -18,6 +18,7 @@ https://photoshop-sqdzy.onrender.com
 - включать и выключать отдельные каналы изображения: grayscale, RGB и alpha;
 - показывать миниатюры каждого канала в боковой панели;
 - считывать пиксель пипеткой и выводить координаты, RGB и CIELAB;
+- строить гистограмму и применять коррекцию «Уровни» для Master, RGB/Gray и Alpha;
 - отображать исходную ширину, высоту, глубину цвета и формат в status bar.
 
 ## Структура
@@ -27,6 +28,7 @@ https://photoshop-sqdzy.onrender.com
 - `src/lib/raster-image.ts` — загрузка, экспорт, кодер и декодер GB7.
 - `src/lib/canvas-preview.ts` — расчет размещения изображения и отрисовка шахматной подложки.
 - `src/lib/color-channels.ts` — подготовка RGBA-буферов для выбранных каналов.
+- `src/lib/levels.ts` — расчет гистограмм, LUT и применение входных уровней.
 - `src/lib/color-space.ts` — перевод RGB в CIELAB.
 - `src/lib/pixel-sampling.ts` — сопоставление клика на canvas с пикселем изображения.
 

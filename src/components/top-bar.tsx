@@ -11,6 +11,7 @@ type TopBarProps = {
   image: LoadedRasterImage | null
   onExport: (mimeType: SupportedRasterMimeType) => void
   onOpen: () => void
+  onOpenLevels: () => void
   onToolChange: (tool: EditorTool) => void
 }
 
@@ -20,6 +21,7 @@ export function TopBar({
   image,
   onExport,
   onOpen,
+  onOpenLevels,
   onToolChange,
 }: TopBarProps) {
   return (
@@ -51,6 +53,12 @@ export function TopBar({
               disabled={disabled || !image}
               label="Пипетка"
               onClick={() => onToolChange('eyedropper')}
+            />
+            <ToolButton
+              active={false}
+              disabled={disabled || !image}
+              label="Уровни"
+              onClick={onOpenLevels}
             />
           </div>
 

@@ -235,6 +235,34 @@ export async function exportRasterImage(
   })
 }
 
+export async function createRasterImageWithPixels(
+  image: LoadedRasterImage,
+  rgba: Uint8ClampedArray,
+): Promise<LoadedRasterImage> {
+  if (rgba.length !== image.width * image.height * 4) {
+    throw new Error('Некорректный RGBA-буфер для обновления изображения.')
+  }
+
+  const bitmapBytes = new Uint8ClampedArray(rgba.length)
+
+  bitmapBytes.set(rgba)
+
+  return createLoadedRasterImage({
+    bitmap: await createImageBitmap(
+      new ImageData(bitmapBytes, image.width, image.height),
+    ),
+    bitDepth: image.bitDepth,
+    channels: image.channels,
+    colorModel: image.colorModel,
+    format: image.format,
+    height: image.height,
+    mimeType: image.mimeType,
+    name: image.name,
+    rgba,
+    width: image.width,
+  })
+}
+
 export function buildDownloadName(
   originalName: string,
   mimeType: SupportedRasterMimeType,

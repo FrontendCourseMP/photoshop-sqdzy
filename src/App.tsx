@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -7,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { CanvasStage } from './components/canvas-stage'
+import { LevelsDialog } from './components/levels-dialog'
 import { SidePanel } from './components/side-panel'
 import { StatusBar } from './components/status-bar'
 import { TopBar } from './components/top-bar'
@@ -27,6 +29,7 @@ import {
 } from './lib/pixel-sampling'
 import {
   buildDownloadName,
+  createRasterImageWithPixels,
   exportRasterImage,
   loadRasterImage,
   type LoadedRasterImage,
@@ -50,12 +53,66 @@ function App() {
   const [busyMessage, setBusyMessage] = useState('')
   const [message, setMessage] = useState('Готов к загрузке PNG, JPG и GB7.')
   const [pixelSample, setPixelSample] = useState<PixelSample | null>(null)
+  const [isLevelsOpen, setIsLevelsOpen] = useState(false)
   const displayRgbaRef = useRef<Uint8ClampedArray | null>(null)
   const [displayVersion, setDisplayVersion] = useState(0)
+  const levelsPreviewRgbaRef = useRef<Uint8ClampedArray | null>(null)
+  const [levelsPreviewVersion, setLevelsPreviewVersion] = useState(0)
   const displayRgba = displayRgbaRef.current
   const allChannelsVisible = useMemo(
     () => (image ? areAllImageChannelsVisible(image.channels, channelState) : true),
     [channelState, image],
+  )
+
+  const handleLevelsPreviewChange = useCallback(
+    (nextRgba: Uint8ClampedArray | null) => {
+      if (levelsPreviewRgbaRef.current === nextRgba) {
+        return
+      }
+
+      levelsPreviewRgbaRef.current = nextRgba
+      setLevelsPreviewVersion((version) => version + 1)
+    },
+    [],
+  )
+
+  const closeLevelsDialog = useCallback(() => {
+    setIsLevelsOpen(false)
+    handleLevelsPreviewChange(null)
+  }, [handleLevelsPreviewChange])
+
+  const openLevelsDialog = useCallback(() => {
+    if (image) {
+      setIsLevelsOpen(true)
+    }
+  }, [image])
+
+  const applyLevels = useCallback(
+    async (nextRgba: Uint8ClampedArray) => {
+      if (!image) {
+        return
+      }
+
+      setIsBusy(true)
+      setBusyMessage('Применяю уровни.')
+      setMessage('Применяю градационную коррекцию...')
+      await waitForNextPaint()
+
+      try {
+        const nextImage = await createRasterImageWithPixels(image, nextRgba)
+
+        handleLevelsPreviewChange(null)
+        setImage(nextImage)
+        setPixelSample(null)
+        setMessage('Уровни применены.')
+      } catch (error) {
+        setMessage(getErrorMessage(error))
+        setIsBusy(false)
+        setBusyMessage('')
+        throw error
+      }
+    },
+    [handleLevelsPreviewChange, image],
   )
 
   useCanvasRenderer({
@@ -82,20 +139,32 @@ function App() {
 
     if (!image) {
       displayRgbaRef.current = null
+      handleLevelsPreviewChange(null)
       setDisplayVersion((version) => version + 1)
       return
     }
 
+    const baseRgba = levelsPreviewRgbaRef.current ?? image.rgba
+
     if (allChannelsVisible) {
-      displayRgbaRef.current = image.rgba
+      displayRgbaRef.current = baseRgba
       setDisplayVersion((version) => version + 1)
       return
     }
+
+    const displayImage: LoadedRasterImage =
+      baseRgba === image.rgba
+        ? image
+        : {
+            ...image,
+            bitmap: image.bitmap,
+            rgba: baseRgba,
+          }
 
     setIsBusy(true)
     setBusyMessage('Пересчитываю цветовые каналы.')
 
-    void applyChannelStateAsync(image, channelState).then((nextRgba) => {
+    void applyChannelStateAsync(displayImage, channelState).then((nextRgba) => {
       if (!isCancelled) {
         displayRgbaRef.current = nextRgba
         setDisplayVersion((version) => version + 1)
@@ -105,7 +174,13 @@ function App() {
     return () => {
       isCancelled = true
     }
-  }, [allChannelsVisible, channelState, image])
+  }, [
+    allChannelsVisible,
+    channelState,
+    handleLevelsPreviewChange,
+    image,
+    levelsPreviewVersion,
+  ])
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -124,6 +199,8 @@ function App() {
     try {
       const nextImage = await loadRasterImage(file)
 
+      handleLevelsPreviewChange(null)
+      setIsLevelsOpen(false)
       setImage(nextImage)
       setChannelState(createDefaultChannelState(nextImage.channels))
       setPixelSample(null)
@@ -224,6 +301,7 @@ function App() {
           disabled={isBusy}
           image={image}
           onExport={exportFromUi}
+          onOpenLevels={openLevelsDialog}
           onOpen={openFileDialog}
           onToolChange={setActiveTool}
         />
@@ -262,6 +340,14 @@ function App() {
           onChange={handleFileChange}
           ref={inputRef}
           type="file"
+        />
+
+        <LevelsDialog
+          image={image}
+          onApply={applyLevels}
+          onClose={closeLevelsDialog}
+          onPreviewChange={handleLevelsPreviewChange}
+          open={isLevelsOpen}
         />
       </div>
     </div>
