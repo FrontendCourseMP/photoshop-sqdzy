@@ -13,12 +13,13 @@ import { TopBar } from './components/top-bar'
 import { useCanvasRenderer } from './hooks/use-canvas-renderer'
 import { useElementSize } from './hooks/use-element-size'
 import {
-  applyChannelState,
+  applyChannelStateAsync,
   areAllImageChannelsVisible,
   createDefaultChannelState,
   toggleChannelState,
   type ChannelState,
 } from './lib/color-channels'
+import { waitForNextPaint } from './lib/task-yield'
 import {
   getImageCoordinatesFromCanvasPoint,
   sampleImagePixel,
@@ -49,21 +50,18 @@ function App() {
   const [busyMessage, setBusyMessage] = useState('')
   const [message, setMessage] = useState('Готов к загрузке PNG, JPG и GB7.')
   const [pixelSample, setPixelSample] = useState<PixelSample | null>(null)
-  const displayRgba = useMemo(() => {
-    if (!image) {
-      return null
-    }
-
-    if (areAllImageChannelsVisible(image.channels, channelState)) {
-      return image.rgba
-    }
-
-    return applyChannelState(image, channelState)
-  }, [channelState, image])
+  const displayRgbaRef = useRef<Uint8ClampedArray | null>(null)
+  const [displayVersion, setDisplayVersion] = useState(0)
+  const displayRgba = displayRgbaRef.current
+  const allChannelsVisible = useMemo(
+    () => (image ? areAllImageChannelsVisible(image.channels, channelState) : true),
+    [channelState, image],
+  )
 
   useCanvasRenderer({
     canvasRef,
     displayRgba,
+    displayVersion,
     image,
     onError: setMessage,
     stageSize,
@@ -78,6 +76,36 @@ function App() {
       image?.bitmap.close()
     }
   }, [image])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    if (!image) {
+      displayRgbaRef.current = null
+      setDisplayVersion((version) => version + 1)
+      return
+    }
+
+    if (allChannelsVisible) {
+      displayRgbaRef.current = image.rgba
+      setDisplayVersion((version) => version + 1)
+      return
+    }
+
+    setIsBusy(true)
+    setBusyMessage('Пересчитываю цветовые каналы.')
+
+    void applyChannelStateAsync(image, channelState).then((nextRgba) => {
+      if (!isCancelled) {
+        displayRgbaRef.current = nextRgba
+        setDisplayVersion((version) => version + 1)
+      }
+    })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [allChannelsVisible, channelState, image])
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -95,9 +123,6 @@ function App() {
 
     try {
       const nextImage = await loadRasterImage(file)
-
-      // Yield control to let the browser process any UI events and keep the loader smooth
-      await new Promise((resolve) => setTimeout(resolve, 50))
 
       setImage(nextImage)
       setChannelState(createDefaultChannelState(nextImage.channels))
@@ -155,7 +180,7 @@ function App() {
     }
 
     setIsBusy(true)
-    setBusyMessage('Пересчитываю цветовые каналы...')
+    setBusyMessage('Пересчитываю цветовые каналы.')
     await waitForNextPaint()
 
     setChannelState((currentState) =>
@@ -249,14 +274,6 @@ function getErrorMessage(error: unknown): string {
   }
 
   return 'Произошла неизвестная ошибка.'
-}
-
-function waitForNextPaint(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve())
-    })
-  })
 }
 
 export default App

@@ -10,6 +10,7 @@ import type { LoadedRasterImage } from '../lib/raster-image'
 type UseCanvasRendererOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   displayRgba: Uint8ClampedArray | null
+  displayVersion: number
   image: LoadedRasterImage | null
   onError: (message: string) => void
   stageSize: CanvasStageSize
@@ -19,6 +20,7 @@ type UseCanvasRendererOptions = {
 export function useCanvasRenderer({
   canvasRef,
   displayRgba,
+  displayVersion,
   image,
   onError,
   stageSize,
@@ -112,5 +114,5 @@ export function useCanvasRenderer({
     return () => {
       clearTimeout(timeoutId)
     }
-  }, [canvasRef, displayRgba, image, onError, stageSize])
+  }, [canvasRef, displayRgba, displayVersion, image, onError, stageSize])
 }

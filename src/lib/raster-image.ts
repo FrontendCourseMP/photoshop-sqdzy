@@ -1,8 +1,11 @@
+import { yieldToBrowser } from './task-yield'
+
 export const GRAYBIT7_MIME_TYPE = 'image/x-graybit7'
 
 const GB7_SIGNATURE = new Uint8Array([0x47, 0x42, 0x37, 0x1d])
 const GB7_HEADER_SIZE = 12
 const GB7_VERSION = 0x01
+const PIXEL_READ_CHUNK_SIZE = 180_000
 
 export type SupportedRasterMimeType =
   | 'image/jpeg'
@@ -24,6 +27,11 @@ export interface LoadedRasterImage {
   width: number
 }
 
+type LoadedRasterImageInput = Omit<LoadedRasterImage, 'bitmap' | 'rgba'> & {
+  bitmap: ImageBitmap
+  rgba: Uint8ClampedArray
+}
+
 export interface DecodedGrayBit7Image {
   hasMask: boolean
   height: number
@@ -31,22 +39,61 @@ export interface DecodedGrayBit7Image {
   width: number
 }
 
+type RasterWorkerLoadedMessage = {
+  bitmap: ImageBitmap
+  bitDepth: number
+  channels: RasterChannel[]
+  colorModel: string
+  format: LoadedRasterImage['format']
+  height: number
+  id: number
+  rgba: Uint8ClampedArray
+  status: 'loaded'
+  width: number
+}
+
+type RasterWorkerErrorMessage = {
+  id: number
+  message: string
+  status: 'error'
+}
+
+type RasterWorkerMessage = RasterWorkerErrorMessage | RasterWorkerLoadedMessage
+
+let nextRasterWorkerRequestId = 0
+
 export async function loadRasterImage(file: File): Promise<LoadedRasterImage> {
   const mimeType = resolveMimeType(file)
+
+  if (canUseRasterWorker()) {
+    return loadRasterImageInWorker(file, mimeType)
+  }
+
+  return loadRasterImageOnMainThread(file, mimeType)
+}
+
+async function loadRasterImageOnMainThread(
+  file: File,
+  mimeType: SupportedRasterMimeType,
+): Promise<LoadedRasterImage> {
 
   if (mimeType === GRAYBIT7_MIME_TYPE) {
     return loadGrayBit7Image(file, mimeType)
   }
 
   const bitmap = await createImageBitmap(file)
-  const rgba = await readBitmapPixelsAsync({
+  const pixelData = await readBitmapPixelsAsync({
     bitmap,
+    detectTransparency: mimeType === 'image/png',
     height: bitmap.height,
     width: bitmap.width,
   })
-  const workingProfile = getWorkingProfile(mimeType, rgba)
+  const workingProfile = getWorkingProfile(
+    mimeType,
+    pixelData.hasTransparentPixels,
+  )
 
-  return {
+  return createLoadedRasterImage({
     bitmap,
     bitDepth: workingProfile.bitDepth,
     channels: workingProfile.channels,
@@ -55,9 +102,71 @@ export async function loadRasterImage(file: File): Promise<LoadedRasterImage> {
     height: bitmap.height,
     mimeType,
     name: file.name,
-    rgba,
+    rgba: pixelData.rgba,
     width: bitmap.width,
-  }
+  })
+}
+
+function canUseRasterWorker(): boolean {
+  return (
+    typeof Worker !== 'undefined' &&
+    typeof OffscreenCanvas !== 'undefined' &&
+    typeof createImageBitmap !== 'undefined'
+  )
+}
+
+function loadRasterImageInWorker(
+  file: File,
+  mimeType: SupportedRasterMimeType,
+): Promise<LoadedRasterImage> {
+  const worker = new Worker(
+    new URL('../workers/raster-loader.worker.ts', import.meta.url),
+    { type: 'module' },
+  )
+  const id = nextRasterWorkerRequestId
+
+  nextRasterWorkerRequestId += 1
+
+  return new Promise((resolve, reject) => {
+    worker.onmessage = (event: MessageEvent<RasterWorkerMessage>) => {
+      const message = event.data
+
+      if (message.id !== id) {
+        return
+      }
+
+      worker.terminate()
+
+      if (message.status === 'error') {
+        reject(new Error(message.message))
+        return
+      }
+
+      resolve(createLoadedRasterImage({
+        bitmap: message.bitmap,
+        bitDepth: message.bitDepth,
+        channels: message.channels,
+        colorModel: message.colorModel,
+        format: message.format,
+        height: message.height,
+        mimeType,
+        name: file.name,
+        rgba: message.rgba,
+        width: message.width,
+      }))
+    }
+
+    worker.onerror = (event) => {
+      worker.terminate()
+      reject(new Error(event.message || 'Не удалось обработать файл в фоновом потоке.'))
+    }
+
+    worker.postMessage({
+      file,
+      id,
+      mimeType,
+    })
+  })
 }
 
 export async function exportRasterImage(
@@ -297,7 +406,7 @@ function resolveMimeType(file: File): SupportedRasterMimeType {
 
 function getWorkingProfile(
   mimeType: 'image/jpeg' | 'image/png',
-  rgba: Uint8ClampedArray,
+  hasAlpha: boolean,
 ): {
   bitDepth: number
   channels: RasterChannel[]
@@ -310,8 +419,6 @@ function getWorkingProfile(
       colorModel: 'RGB',
     }
   }
-
-  const hasAlpha = hasTransparentPixels(rgba)
 
   return {
     bitDepth: hasAlpha ? 32 : 24,
@@ -334,7 +441,7 @@ async function loadGrayBit7Image(
     new ImageData(imageBytes, decoded.width, decoded.height),
   )
 
-  return {
+  return createLoadedRasterImage({
     bitDepth: decoded.hasMask ? 8 : 7,
     bitmap,
     channels: decoded.hasMask ? ['gray', 'alpha'] : ['gray'],
@@ -345,7 +452,37 @@ async function loadGrayBit7Image(
     name: file.name,
     rgba: decoded.rgba,
     width: decoded.width,
-  }
+  })
+}
+
+function createLoadedRasterImage(input: LoadedRasterImageInput): LoadedRasterImage {
+  const image = {
+    bitDepth: input.bitDepth,
+    channels: input.channels,
+    colorModel: input.colorModel,
+    format: input.format,
+    height: input.height,
+    mimeType: input.mimeType,
+    name: input.name,
+    width: input.width,
+  } as LoadedRasterImage
+
+  Object.defineProperties(image, {
+    bitmap: {
+      configurable: false,
+      enumerable: false,
+      value: input.bitmap,
+      writable: false,
+    },
+    rgba: {
+      configurable: false,
+      enumerable: false,
+      value: input.rgba,
+      writable: false,
+    },
+  })
+
+  return image
 }
 
 function hasTransparentPixels(rgba: Uint8ClampedArray): boolean {
@@ -367,35 +504,74 @@ function mapRgbToGray7(red: number, green: number, blue: number): number {
 
 async function readBitmapPixelsAsync(image: {
   bitmap: ImageBitmap
+  detectTransparency: boolean
   height: number
   width: number
-}): Promise<Uint8ClampedArray> {
+}): Promise<{
+  hasTransparentPixels: boolean
+  rgba: Uint8ClampedArray
+}> {
+  const chunkHeight = Math.max(
+    1,
+    Math.floor(PIXEL_READ_CHUNK_SIZE / image.width),
+  )
   const canvas = document.createElement('canvas')
   canvas.width = image.width
-  canvas.height = image.height
+  canvas.height = Math.min(chunkHeight, image.height)
 
-  const context = canvas.getContext('2d')
+  const context = canvas.getContext('2d', { willReadFrequently: true })
 
   if (!context) {
     throw new Error('Не удалось создать контекст canvas для кодирования GB7.')
   }
 
-  context.clearRect(0, 0, image.width, image.height)
-  context.drawImage(image.bitmap, 0, 0, image.width, image.height)
-
   const totalPixels = image.width * image.height
   const rgba = new Uint8ClampedArray(totalPixels * 4)
+  let hasTransparentPixelsInImage = false
 
-  const chunkSize = 256
-  for (let y = 0; y < image.height; y += chunkSize) {
-    const currentChunkHeight = Math.min(chunkSize, image.height - y)
-    const chunkData = context.getImageData(0, y, image.width, currentChunkHeight)
+  for (let y = 0; y < image.height; y += chunkHeight) {
+    const currentChunkHeight = Math.min(chunkHeight, image.height - y)
+
+    if (canvas.height !== currentChunkHeight) {
+      canvas.height = currentChunkHeight
+    }
+
+    context.clearRect(0, 0, image.width, currentChunkHeight)
+    context.drawImage(
+      image.bitmap,
+      0,
+      y,
+      image.width,
+      currentChunkHeight,
+      0,
+      0,
+      image.width,
+      currentChunkHeight,
+    )
+
+    const chunkData = context.getImageData(
+      0,
+      0,
+      image.width,
+      currentChunkHeight,
+    )
     
     const offset = y * image.width * 4
     rgba.set(chunkData.data, offset)
 
-    await new Promise((resolve) => setTimeout(resolve, 0))
+    if (
+      image.detectTransparency &&
+      !hasTransparentPixelsInImage &&
+      hasTransparentPixels(chunkData.data)
+    ) {
+      hasTransparentPixelsInImage = true
+    }
+
+    await yieldToBrowser()
   }
 
-  return rgba
+  return {
+    hasTransparentPixels: hasTransparentPixelsInImage,
+    rgba,
+  }
 }

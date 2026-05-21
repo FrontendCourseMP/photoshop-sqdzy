@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyChannelStateAsync,
   applyChannelState,
   areAllImageChannelsVisible,
   createChannelPreviewRgba,
@@ -85,6 +86,25 @@ describe('color channel rendering', () => {
     expect(areAllImageChannelsVisible(channels, state)).toBe(true)
     expect(areAllImageChannelsVisible(channels, { ...state, blue: false })).toBe(
       false,
+    )
+  })
+
+  it('matches the synchronous channel output when rendered asynchronously', async () => {
+    const image = createImage({
+      channels: ['red', 'green', 'blue', 'alpha'],
+      rgba: [
+        120, 80, 40, 255,
+        12, 128, 220, 48,
+      ],
+      width: 2,
+    })
+    const state = {
+      ...createDefaultChannelState(image.channels),
+      green: false,
+    }
+
+    await expect(applyChannelStateAsync(image, state)).resolves.toEqual(
+      applyChannelState(image, state),
     )
   })
 })

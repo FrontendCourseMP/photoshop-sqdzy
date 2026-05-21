@@ -1,4 +1,5 @@
 import type { LoadedRasterImage, RasterChannel } from './raster-image'
+import { yieldToBrowser } from './task-yield'
 
 export type ChannelState = Record<RasterChannel, boolean>
 
@@ -20,6 +21,7 @@ export const CHANNEL_SHORT_LABELS: Record<RasterChannel, string> = {
 
 const ALL_CHANNELS: RasterChannel[] = ['gray', 'red', 'green', 'blue', 'alpha']
 const RGB_CHANNELS: RasterChannel[] = ['red', 'green', 'blue']
+const CHANNEL_RENDER_CHUNK_PIXELS = 160_000
 
 export function createDefaultChannelState(
   channels: readonly RasterChannel[] = [],
@@ -55,11 +57,57 @@ export function applyChannelState(
   channelState: ChannelState,
 ): Uint8ClampedArray {
   const output = new Uint8ClampedArray(image.rgba.length)
+
+  writeChannelStateRange({
+    channelState,
+    endOffset: image.rgba.length,
+    image,
+    output,
+    startOffset: 0,
+  })
+
+  return output
+}
+
+export async function applyChannelStateAsync(
+  image: LoadedRasterImage,
+  channelState: ChannelState,
+): Promise<Uint8ClampedArray> {
+  const output = new Uint8ClampedArray(image.rgba.length)
+  const chunkByteLength = CHANNEL_RENDER_CHUNK_PIXELS * 4
+
+  for (
+    let startOffset = 0;
+    startOffset < image.rgba.length;
+    startOffset += chunkByteLength
+  ) {
+    writeChannelStateRange({
+      channelState,
+      endOffset: Math.min(image.rgba.length, startOffset + chunkByteLength),
+      image,
+      output,
+      startOffset,
+    })
+
+    await yieldToBrowser()
+  }
+
+  return output
+}
+
+function writeChannelStateRange(input: {
+  channelState: ChannelState
+  endOffset: number
+  image: LoadedRasterImage
+  output: Uint8ClampedArray
+  startOffset: number
+}): void {
+  const { channelState, endOffset, image, output, startOffset } = input
   const hasGray = image.channels.includes('gray')
   const hasAlpha = image.channels.includes('alpha')
   const showAlpha = hasAlpha && channelState.alpha
 
-  for (let offset = 0; offset < image.rgba.length; offset += 4) {
+  for (let offset = startOffset; offset < endOffset; offset += 4) {
     const red = image.rgba[offset]
     const green = image.rgba[offset + 1]
     const blue = image.rgba[offset + 2]
@@ -102,8 +150,6 @@ export function applyChannelState(
     output[offset + 2] = showBlue ? blue : 0
     output[offset + 3] = showAlpha ? alpha : 255
   }
-
-  return output
 }
 
 export function areAllImageChannelsVisible(
