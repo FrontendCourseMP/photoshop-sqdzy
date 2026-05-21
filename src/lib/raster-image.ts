@@ -301,7 +301,7 @@ async function loadGrayBit7Image(
   return {
     bitDepth: decoded.hasMask ? 8 : 7,
     bitmap,
-    colorModel: decoded.hasMask ? 'Gray + Mask' : 'Gray',
+    colorModel: decoded.hasMask ? 'Gray' : 'Gray',
     format: 'GB7',
     height: decoded.height,
     mimeType,

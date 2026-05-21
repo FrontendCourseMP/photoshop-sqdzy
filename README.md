@@ -14,6 +14,15 @@ https://photoshop-sqdzy.onrender.com
 - экспортировать текущее изображение в PNG/JPG/GB7;
 - для GB7 читать/писать заголовок по спецификации (сигнатура, версия, флаги, big-endian размеры, резерв);
 - декодировать 7-битный grayscale и бинарную маску из старшего бита.
+- показывать прозрачные области на canvas через шахматную подложку;
+- отображать исходную ширину, высоту, глубину цвета и формат в status bar.
+
+## Структура
+
+- `src/components/` — элементы интерфейса редактора: меню файла, боковая панель, canvas-stage, status bar.
+- `src/hooks/` — измерение рабочей области и отрисовка preview на canvas.
+- `src/lib/raster-image.ts` — загрузка, экспорт, кодер и декодер GB7.
+- `src/lib/canvas-preview.ts` — расчет размещения изображения и отрисовка шахматной подложки.
 
 ## Команды
 
@@ -21,4 +30,6 @@ https://photoshop-sqdzy.onrender.com
 npm install
 npm run dev
 npm run build
-npm run lint```
+npm run lint
+npm test
+```
