@@ -39,7 +39,7 @@ export async function loadRasterImage(file: File): Promise<LoadedRasterImage> {
   }
 
   const bitmap = await createImageBitmap(file)
-  const rgba = readBitmapPixels({
+  const rgba = await readBitmapPixelsAsync({
     bitmap,
     height: bitmap.height,
     width: bitmap.width,
@@ -365,11 +365,11 @@ function mapRgbToGray7(red: number, green: number, blue: number): number {
   return Math.min(127, Math.max(0, gray7))
 }
 
-function readBitmapPixels(image: {
+async function readBitmapPixelsAsync(image: {
   bitmap: ImageBitmap
   height: number
   width: number
-}): Uint8ClampedArray {
+}): Promise<Uint8ClampedArray> {
   const canvas = document.createElement('canvas')
   canvas.width = image.width
   canvas.height = image.height
@@ -383,5 +383,19 @@ function readBitmapPixels(image: {
   context.clearRect(0, 0, image.width, image.height)
   context.drawImage(image.bitmap, 0, 0, image.width, image.height)
 
-  return context.getImageData(0, 0, image.width, image.height).data
+  const totalPixels = image.width * image.height
+  const rgba = new Uint8ClampedArray(totalPixels * 4)
+
+  const chunkSize = 256
+  for (let y = 0; y < image.height; y += chunkSize) {
+    const currentChunkHeight = Math.min(chunkSize, image.height - y)
+    const chunkData = context.getImageData(0, y, image.width, currentChunkHeight)
+    
+    const offset = y * image.width * 4
+    rgba.set(chunkData.data, offset)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  return rgba
 }

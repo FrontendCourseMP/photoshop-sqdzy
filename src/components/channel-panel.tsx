@@ -20,12 +20,14 @@ const PREVIEW_SIZE = {
 
 type ChannelPanelProps = {
   channelState: ChannelState
+  disabled: boolean
   image: LoadedRasterImage | null
   onToggleChannel: (channel: RasterChannel) => void
 }
 
 export function ChannelPanel({
   channelState,
+  disabled,
   image,
   onToggleChannel,
 }: ChannelPanelProps) {
@@ -46,6 +48,7 @@ export function ChannelPanel({
             <ChannelToggle
               active={channelState[channel]}
               channel={channel}
+              disabled={disabled}
               image={image}
               key={channel}
               onToggle={() => onToggleChannel(channel)}
@@ -70,22 +73,25 @@ export function ChannelPanel({
 function ChannelToggle({
   active,
   channel,
+  disabled,
   image,
   onToggle,
 }: {
   active: boolean
   channel: RasterChannel
+  disabled: boolean
   image: LoadedRasterImage
   onToggle: () => void
 }) {
   return (
     <button
       aria-pressed={active}
-      className={`grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border p-2 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-sky-400/70 ${
+      className={`grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border p-2 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50 ${
         active
           ? 'border-sky-300/35 bg-sky-300/[0.08]'
           : 'border-white/[0.08] bg-white/[0.035] opacity-60 hover:opacity-80'
       }`}
+      disabled={disabled}
       onClick={onToggle}
       type="button"
     >
@@ -135,53 +141,59 @@ function ChannelPreview({
       return
     }
 
-    const devicePixelRatio = window.devicePixelRatio || 1
+    const timeoutId = setTimeout(() => {
+      const devicePixelRatio = window.devicePixelRatio || 1
 
-    canvas.width = Math.floor(PREVIEW_SIZE.width * devicePixelRatio)
-    canvas.height = Math.floor(PREVIEW_SIZE.height * devicePixelRatio)
-    canvas.style.width = `${PREVIEW_SIZE.width}px`
-    canvas.style.height = `${PREVIEW_SIZE.height}px`
+      canvas.width = Math.floor(PREVIEW_SIZE.width * devicePixelRatio)
+      canvas.height = Math.floor(PREVIEW_SIZE.height * devicePixelRatio)
+      canvas.style.width = `${PREVIEW_SIZE.width}px`
+      canvas.style.height = `${PREVIEW_SIZE.height}px`
 
-    context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
-    context.clearRect(0, 0, PREVIEW_SIZE.width, PREVIEW_SIZE.height)
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
+      context.clearRect(0, 0, PREVIEW_SIZE.width, PREVIEW_SIZE.height)
 
-    const rect = getPreviewFitRect({
-      imageHeight: image.height,
-      imageWidth: image.width,
-      previewHeight: PREVIEW_SIZE.height,
-      previewWidth: PREVIEW_SIZE.width,
-    })
-    const previewWidth = Math.max(1, Math.round(rect.width * devicePixelRatio))
-    const previewHeight = Math.max(
-      1,
-      Math.round(rect.height * devicePixelRatio),
-    )
-    const previewCanvas = document.createElement('canvas')
-    const previewContext = previewCanvas.getContext('2d')
+      const rect = getPreviewFitRect({
+        imageHeight: image.height,
+        imageWidth: image.width,
+        previewHeight: PREVIEW_SIZE.height,
+        previewWidth: PREVIEW_SIZE.width,
+      })
+      const previewWidth = Math.max(1, Math.round(rect.width * devicePixelRatio))
+      const previewHeight = Math.max(
+        1,
+        Math.round(rect.height * devicePixelRatio),
+      )
+      const previewCanvas = document.createElement('canvas')
+      const previewContext = previewCanvas.getContext('2d')
 
-    if (!previewContext) {
-      return
-    }
+      if (!previewContext) {
+        return
+      }
 
-    previewCanvas.width = previewWidth
-    previewCanvas.height = previewHeight
-    previewContext.putImageData(
-      new ImageData(
-        createChannelPreviewRgba(
-          image,
-          channel,
+      previewCanvas.width = previewWidth
+      previewCanvas.height = previewHeight
+      previewContext.putImageData(
+        new ImageData(
+          createChannelPreviewRgba(
+            image,
+            channel,
+            previewWidth,
+            previewHeight,
+          ) as ImageDataArray,
           previewWidth,
           previewHeight,
-        ) as ImageDataArray,
-        previewWidth,
-        previewHeight,
-      ),
-      0,
-      0,
-    )
+        ),
+        0,
+        0,
+      )
 
-    drawTransparencyGrid(context, rect, 6)
-    context.drawImage(previewCanvas, rect.x, rect.y, rect.width, rect.height)
+      drawTransparencyGrid(context, rect, 6)
+      context.drawImage(previewCanvas, rect.x, rect.y, rect.width, rect.height)
+    }, 0)
+
+    return () => {
+      clearTimeout(timeoutId)
+    }
   }, [channel, image])
 
   return (

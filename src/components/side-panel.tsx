@@ -68,6 +68,7 @@ export function SidePanel({
 
         <ChannelPanel
           channelState={channelState}
+          disabled={disabled}
           image={image}
           onToggleChannel={onToggleChannel}
         />

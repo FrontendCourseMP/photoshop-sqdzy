@@ -67,6 +67,10 @@ function App() {
     image,
     onError: setMessage,
     stageSize,
+    onRenderComplete: () => {
+      setIsBusy(false)
+      setBusyMessage('')
+    },
   })
 
   useEffect(() => {
@@ -92,13 +96,15 @@ function App() {
     try {
       const nextImage = await loadRasterImage(file)
 
+      // Yield control to let the browser process any UI events and keep the loader smooth
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
       setImage(nextImage)
       setChannelState(createDefaultChannelState(nextImage.channels))
       setPixelSample(null)
       setMessage(`Загружено: ${file.name}`)
     } catch (error) {
       setMessage(getErrorMessage(error))
-    } finally {
       setIsBusy(false)
       setBusyMessage('')
     }
@@ -143,10 +149,14 @@ function App() {
     void handleExport(mimeType)
   }
 
-  function toggleChannel(channel: RasterChannel) {
-    if (!image) {
+  async function toggleChannel(channel: RasterChannel) {
+    if (!image || !image.channels.includes(channel)) {
       return
     }
+
+    setIsBusy(true)
+    setBusyMessage('Пересчитываю цветовые каналы...')
+    await waitForNextPaint()
 
     setChannelState((currentState) =>
       toggleChannelState(currentState, image.channels, channel),
