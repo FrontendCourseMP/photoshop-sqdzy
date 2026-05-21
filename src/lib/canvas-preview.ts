@@ -72,3 +72,38 @@ export function drawTransparencyGrid(
 
   context.restore()
 }
+
+export function drawRgbaImage(
+  context: CanvasRenderingContext2D,
+  input: {
+    height: number
+    rect: DrawRect
+    rgba: Uint8ClampedArray
+    width: number
+  },
+): void {
+  const sourceCanvas = document.createElement('canvas')
+  sourceCanvas.width = input.width
+  sourceCanvas.height = input.height
+
+  const sourceContext = sourceCanvas.getContext('2d')
+
+  if (!sourceContext) {
+    throw new Error('Не удалось создать контекст canvas для отрисовки.')
+  }
+
+  const imageData = new ImageData(
+    input.rgba as ImageDataArray,
+    input.width,
+    input.height,
+  )
+
+  sourceContext.putImageData(imageData, 0, 0)
+  context.drawImage(
+    sourceCanvas,
+    input.rect.x,
+    input.rect.y,
+    input.rect.width,
+    input.rect.height,
+  )
+}

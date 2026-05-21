@@ -1,27 +1,58 @@
 import { FileMenu } from './file-menu'
+import type { EditorTool } from '../lib/editor-tool'
 import type {
   LoadedRasterImage,
   SupportedRasterMimeType,
 } from '../lib/raster-image'
 
 type TopBarProps = {
+  activeTool: EditorTool
   disabled: boolean
   image: LoadedRasterImage | null
   onExport: (mimeType: SupportedRasterMimeType) => void
   onOpen: () => void
+  onToolChange: (tool: EditorTool) => void
 }
 
-export function TopBar({ disabled, image, onExport, onOpen }: TopBarProps) {
+export function TopBar({
+  activeTool,
+  disabled,
+  image,
+  onExport,
+  onOpen,
+  onToolChange,
+}: TopBarProps) {
   return (
     <header className="border-b border-black/40 bg-[#2c2f36]">
       <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 px-3 py-2 sm:px-4">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           <FileMenu
             canExport={Boolean(image)}
             disabled={disabled}
             onExport={onExport}
             onOpen={onOpen}
           />
+
+          <div className="hidden h-5 w-px bg-white/10 sm:block" />
+
+          <div
+            aria-label="Инструменты"
+            className="flex rounded-md border border-white/10 bg-black/20 p-0.5"
+            role="toolbar"
+          >
+            <ToolButton
+              active={activeTool === 'cursor'}
+              disabled={disabled}
+              label="Курсор"
+              onClick={() => onToolChange('cursor')}
+            />
+            <ToolButton
+              active={activeTool === 'eyedropper'}
+              disabled={disabled || !image}
+              label="Пипетка"
+              onClick={() => onToolChange('eyedropper')}
+            />
+          </div>
 
           <div className="hidden h-5 w-px bg-white/10 sm:block" />
 
@@ -48,5 +79,33 @@ export function TopBar({ disabled, image, onExport, onOpen }: TopBarProps) {
         </div>
       </div>
     </header>
+  )
+}
+
+function ToolButton({
+  active,
+  disabled,
+  label,
+  onClick,
+}: {
+  active: boolean
+  disabled: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      aria-pressed={active}
+      className={`h-7 cursor-pointer rounded px-2.5 text-xs font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:text-zinc-500 ${
+        active
+          ? 'bg-sky-300 text-slate-950'
+          : 'text-zinc-300 hover:bg-white/[0.08]'
+      }`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
   )
 }

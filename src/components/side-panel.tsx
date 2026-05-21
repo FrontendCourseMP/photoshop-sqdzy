@@ -1,24 +1,38 @@
+import { ChannelPanel } from './channel-panel'
+import { EyedropperPanel } from './eyedropper-panel'
+import type { ChannelState } from '../lib/color-channels'
+import type { EditorTool } from '../lib/editor-tool'
+import type { PixelSample } from '../lib/pixel-sampling'
 import {
   GRAYBIT7_MIME_TYPE,
   type LoadedRasterImage,
+  type RasterChannel,
   type SupportedRasterMimeType,
 } from '../lib/raster-image'
 
 type SidePanelProps = {
+  activeTool: EditorTool
+  channelState: ChannelState
   disabled: boolean
   image: LoadedRasterImage | null
   onExport: (mimeType: SupportedRasterMimeType) => void
+  onToggleChannel: (channel: RasterChannel) => void
   onOpen: () => void
+  pixelSample: PixelSample | null
 }
 
 export function SidePanel({
+  activeTool,
+  channelState,
   disabled,
   image,
   onExport,
+  onToggleChannel,
   onOpen,
+  pixelSample,
 }: SidePanelProps) {
   return (
-    <aside className="flex min-h-0 flex-col border-r border-black/30 bg-[#282b31] lg:w-72">
+    <aside className="flex min-h-0 flex-col border-r border-black/30 bg-[#282b31] lg:w-80">
       <div className="border-b border-white/[0.08] p-3">
         <button
           className="h-9 w-full cursor-pointer rounded-md bg-sky-400 px-3 text-sm font-semibold text-slate-950 outline-none transition hover:bg-sky-300 focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-60"
@@ -52,6 +66,14 @@ export function SidePanel({
           </dl>
         </section>
 
+        <ChannelPanel
+          channelState={channelState}
+          image={image}
+          onToggleChannel={onToggleChannel}
+        />
+
+        <EyedropperPanel activeTool={activeTool} pixelSample={pixelSample} />
+
         <section>
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
             Экспорт
@@ -75,7 +97,6 @@ export function SidePanel({
             />
           </div>
         </section>
-
       </div>
     </aside>
   )

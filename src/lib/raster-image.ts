@@ -9,14 +9,18 @@ export type SupportedRasterMimeType =
   | 'image/png'
   | typeof GRAYBIT7_MIME_TYPE
 
+export type RasterChannel = 'alpha' | 'blue' | 'gray' | 'green' | 'red'
+
 export interface LoadedRasterImage {
   bitmap: ImageBitmap
   bitDepth: number
+  channels: RasterChannel[]
   colorModel: string
   format: 'GB7' | 'JPG' | 'PNG'
   height: number
   mimeType: SupportedRasterMimeType
   name: string
+  rgba: Uint8ClampedArray
   width: number
 }
 
@@ -35,16 +39,23 @@ export async function loadRasterImage(file: File): Promise<LoadedRasterImage> {
   }
 
   const bitmap = await createImageBitmap(file)
-  const workingProfile = getWorkingProfile(mimeType)
+  const rgba = readBitmapPixels({
+    bitmap,
+    height: bitmap.height,
+    width: bitmap.width,
+  })
+  const workingProfile = getWorkingProfile(mimeType, rgba)
 
   return {
     bitmap,
     bitDepth: workingProfile.bitDepth,
+    channels: workingProfile.channels,
     colorModel: workingProfile.colorModel,
     format: mimeType === 'image/png' ? 'PNG' : 'JPG',
     height: bitmap.height,
     mimeType,
     name: file.name,
+    rgba,
     width: bitmap.width,
   }
 }
@@ -54,10 +65,9 @@ export async function exportRasterImage(
   mimeType: SupportedRasterMimeType,
 ): Promise<Blob> {
   if (mimeType === GRAYBIT7_MIME_TYPE) {
-    const rgba = readBitmapPixels(image)
     const encoded = encodeGrayBit7({
       height: image.height,
-      rgba,
+      rgba: image.rgba,
       width: image.width,
     })
     const blobBytes = new Uint8Array(encoded.length)
@@ -77,12 +87,28 @@ export async function exportRasterImage(
     throw new Error('Не удалось создать контекст canvas для сохранения.')
   }
 
+  const sourceCanvas = document.createElement('canvas')
+  sourceCanvas.width = image.width
+  sourceCanvas.height = image.height
+
+  const sourceContext = sourceCanvas.getContext('2d')
+
+  if (!sourceContext) {
+    throw new Error('Не удалось создать контекст canvas для сохранения.')
+  }
+
+  sourceContext.putImageData(
+    new ImageData(new Uint8ClampedArray(image.rgba), image.width, image.height),
+    0,
+    0,
+  )
+
   if (mimeType === 'image/jpeg') {
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
   }
 
-  context.drawImage(image.bitmap, 0, 0, image.width, image.height)
+  context.drawImage(sourceCanvas, 0, 0, image.width, image.height)
 
   return new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
@@ -269,20 +295,30 @@ function resolveMimeType(file: File): SupportedRasterMimeType {
   throw new Error('Поддерживаются только файлы PNG, JPG и GB7.')
 }
 
-function getWorkingProfile(mimeType: 'image/jpeg' | 'image/png'): {
+function getWorkingProfile(
+  mimeType: 'image/jpeg' | 'image/png',
+  rgba: Uint8ClampedArray,
+): {
   bitDepth: number
+  channels: RasterChannel[]
   colorModel: string
 } {
   if (mimeType === 'image/jpeg') {
     return {
       bitDepth: 24,
+      channels: ['red', 'green', 'blue'],
       colorModel: 'RGB',
     }
   }
 
+  const hasAlpha = hasTransparentPixels(rgba)
+
   return {
-    bitDepth: 32,
-    colorModel: 'RGBA',
+    bitDepth: hasAlpha ? 32 : 24,
+    channels: hasAlpha
+      ? ['red', 'green', 'blue', 'alpha']
+      : ['red', 'green', 'blue'],
+    colorModel: hasAlpha ? 'RGBA' : 'RGB',
   }
 }
 
@@ -301,11 +337,13 @@ async function loadGrayBit7Image(
   return {
     bitDepth: decoded.hasMask ? 8 : 7,
     bitmap,
-    colorModel: decoded.hasMask ? 'Gray' : 'Gray',
+    channels: decoded.hasMask ? ['gray', 'alpha'] : ['gray'],
+    colorModel: decoded.hasMask ? 'Gray + Alpha' : 'Gray',
     format: 'GB7',
     height: decoded.height,
     mimeType,
     name: file.name,
+    rgba: decoded.rgba,
     width: decoded.width,
   }
 }
@@ -327,7 +365,11 @@ function mapRgbToGray7(red: number, green: number, blue: number): number {
   return Math.min(127, Math.max(0, gray7))
 }
 
-function readBitmapPixels(image: LoadedRasterImage): Uint8ClampedArray {
+function readBitmapPixels(image: {
+  bitmap: ImageBitmap
+  height: number
+  width: number
+}): Uint8ClampedArray {
   const canvas = document.createElement('canvas')
   canvas.width = image.width
   canvas.height = image.height

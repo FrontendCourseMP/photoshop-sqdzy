@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { CanvasStage } from './components/canvas-stage'
 import { SidePanel } from './components/side-panel'
 import { StatusBar } from './components/status-bar'
@@ -6,12 +13,26 @@ import { TopBar } from './components/top-bar'
 import { useCanvasRenderer } from './hooks/use-canvas-renderer'
 import { useElementSize } from './hooks/use-element-size'
 import {
+  applyChannelState,
+  areAllImageChannelsVisible,
+  createDefaultChannelState,
+  toggleChannelState,
+  type ChannelState,
+} from './lib/color-channels'
+import {
+  getImageCoordinatesFromCanvasPoint,
+  sampleImagePixel,
+  type PixelSample,
+} from './lib/pixel-sampling'
+import {
   buildDownloadName,
   exportRasterImage,
   loadRasterImage,
   type LoadedRasterImage,
+  type RasterChannel,
   type SupportedRasterMimeType,
 } from './lib/raster-image'
+import type { EditorTool } from './lib/editor-tool'
 
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -20,11 +41,29 @@ function App() {
     useElementSize<HTMLDivElement>()
 
   const [image, setImage] = useState<LoadedRasterImage | null>(null)
+  const [activeTool, setActiveTool] = useState<EditorTool>('cursor')
+  const [channelState, setChannelState] = useState<ChannelState>(() =>
+    createDefaultChannelState(),
+  )
   const [isBusy, setIsBusy] = useState(false)
+  const [busyMessage, setBusyMessage] = useState('')
   const [message, setMessage] = useState('Готов к загрузке PNG, JPG и GB7.')
+  const [pixelSample, setPixelSample] = useState<PixelSample | null>(null)
+  const displayRgba = useMemo(() => {
+    if (!image) {
+      return null
+    }
+
+    if (areAllImageChannelsVisible(image.channels, channelState)) {
+      return image.rgba
+    }
+
+    return applyChannelState(image, channelState)
+  }, [channelState, image])
 
   useCanvasRenderer({
     canvasRef,
+    displayRgba,
     image,
     onError: setMessage,
     stageSize,
@@ -46,16 +85,22 @@ function App() {
     }
 
     setIsBusy(true)
+    setBusyMessage('Декодирую файл и подготавливаю пиксели.')
+    setMessage(`Открываю: ${file.name}`)
+    await waitForNextPaint()
 
     try {
       const nextImage = await loadRasterImage(file)
 
       setImage(nextImage)
+      setChannelState(createDefaultChannelState(nextImage.channels))
+      setPixelSample(null)
       setMessage(`Загружено: ${file.name}`)
     } catch (error) {
       setMessage(getErrorMessage(error))
     } finally {
       setIsBusy(false)
+      setBusyMessage('')
     }
   }
 
@@ -65,6 +110,9 @@ function App() {
     }
 
     setIsBusy(true)
+    setBusyMessage('Подготавливаю файл для сохранения.')
+    setMessage('Сохранение изображения...')
+    await waitForNextPaint()
 
     try {
       const blob = await exportRasterImage(image, mimeType)
@@ -83,6 +131,7 @@ function App() {
       setMessage(getErrorMessage(error))
     } finally {
       setIsBusy(false)
+      setBusyMessage('')
     }
   }
 
@@ -94,28 +143,75 @@ function App() {
     void handleExport(mimeType)
   }
 
+  function toggleChannel(channel: RasterChannel) {
+    if (!image) {
+      return
+    }
+
+    setChannelState((currentState) =>
+      toggleChannelState(currentState, image.channels, channel),
+    )
+  }
+
+  function handleCanvasPointerDown(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    if (!image || activeTool !== 'eyedropper' || event.button !== 0) {
+      return
+    }
+
+    const coordinates = getImageCoordinatesFromCanvasPoint({
+      canvasRect: event.currentTarget.getBoundingClientRect(),
+      clientX: event.clientX,
+      clientY: event.clientY,
+      imageHeight: image.height,
+      imageWidth: image.width,
+    })
+
+    if (!coordinates) {
+      setMessage('Пипетка: точка вне изображения.')
+      return
+    }
+
+    const nextSample = sampleImagePixel(image, coordinates)
+
+    setPixelSample(nextSample)
+    setMessage(
+      `Пипетка: X ${nextSample.x}, Y ${nextSample.y}, RGB ${nextSample.red}, ${nextSample.green}, ${nextSample.blue}`,
+    )
+  }
+
   return (
     <div className="min-h-[100svh] bg-[#1f2228] text-zinc-100">
       <div className="grid min-h-[100svh] grid-rows-[auto_minmax(0,1fr)_auto]">
         <TopBar
+          activeTool={activeTool}
           disabled={isBusy}
           image={image}
           onExport={exportFromUi}
           onOpen={openFileDialog}
+          onToolChange={setActiveTool}
         />
 
         <main className="min-h-0 overflow-y-auto bg-[#1f2228] lg:overflow-hidden">
           <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
             <SidePanel
+              activeTool={activeTool}
+              channelState={channelState}
               disabled={isBusy}
               image={image}
               onExport={exportFromUi}
+              onToggleChannel={toggleChannel}
               onOpen={openFileDialog}
+              pixelSample={pixelSample}
             />
             <CanvasStage
+              activeTool={activeTool}
+              busyMessage={busyMessage}
               canvasRef={canvasRef}
               image={image}
               isBusy={isBusy}
+              onCanvasPointerDown={handleCanvasPointerDown}
               onOpen={openFileDialog}
               stageRef={stageRef}
             />
@@ -143,6 +239,14 @@ function getErrorMessage(error: unknown): string {
   }
 
   return 'Произошла неизвестная ошибка.'
+}
+
+function waitForNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
 }
 
 export default App

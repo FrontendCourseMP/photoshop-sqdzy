@@ -1,40 +1,73 @@
-import type { RefObject } from 'react'
+import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import type { EditorTool } from '../lib/editor-tool'
 import type { LoadedRasterImage } from '../lib/raster-image'
 
 type CanvasStageProps = {
+  activeTool: EditorTool
+  busyMessage: string
   canvasRef: RefObject<HTMLCanvasElement | null>
   image: LoadedRasterImage | null
   isBusy: boolean
+  onCanvasPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void
   onOpen: () => void
   stageRef: RefObject<HTMLDivElement | null>
 }
 
 export function CanvasStage({
+  activeTool,
+  busyMessage,
   canvasRef,
   image,
   isBusy,
+  onCanvasPointerDown,
   onOpen,
   stageRef,
 }: CanvasStageProps) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col bg-[#1f2228]">
-      <div className="flex min-h-0 flex-1 p-3 sm:p-4">
+    <section className="flex min-h-0 flex-col bg-[#1f2228] lg:flex-1">
+      <div className="flex min-h-0 p-3 sm:p-4 lg:h-full lg:flex-1">
         <div
-          className="relative flex min-h-[420px] flex-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#252932] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+          className="relative flex h-[min(70svh,560px)] min-h-[360px] flex-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#252932] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] lg:h-auto lg:min-h-[420px]"
           ref={stageRef}
         >
           {image ? (
             <canvas
               aria-label={`Просмотр изображения ${image.name}`}
-              className="block h-full w-full"
+              className={`block h-full w-full ${
+                activeTool === 'eyedropper' ? 'cursor-crosshair' : 'cursor-default'
+              }`}
+              onPointerDown={onCanvasPointerDown}
               ref={canvasRef}
             />
           ) : (
             <EmptyCanvasState disabled={isBusy} onOpen={onOpen} />
           )}
+          {isBusy ? (
+            <BusyOverlay
+              label={busyMessage || 'Подготавливаю изображение.'}
+            />
+          ) : null}
         </div>
       </div>
     </section>
+  )
+}
+
+function BusyOverlay({ label }: { label: string }) {
+  return (
+    <div
+      aria-live="polite"
+      className="absolute inset-0 z-20 flex items-center justify-center bg-[#1f2228]/82 px-6 backdrop-blur-sm"
+      role="status"
+    >
+      <div className="w-full max-w-sm rounded-lg border border-white/[0.1] bg-[#2a2e36] p-5 text-center shadow-[0_22px_55px_rgba(0,0,0,0.38)]">
+        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-sky-300/25 border-t-sky-300" />
+        <p className="mt-4 text-sm font-semibold text-zinc-100">{label}</p>
+        <p className="mt-2 text-xs leading-5 text-zinc-400">
+          Для каналов и пипетки приложение читает данные каждого пикселя.
+        </p>
+      </div>
+    </div>
   )
 }
 

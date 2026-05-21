@@ -1,5 +1,6 @@
 import { useEffect, type RefObject } from 'react'
 import {
+  drawRgbaImage,
   drawTransparencyGrid,
   getImageFitRect,
   type CanvasStageSize,
@@ -8,6 +9,7 @@ import type { LoadedRasterImage } from '../lib/raster-image'
 
 type UseCanvasRendererOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>
+  displayRgba: Uint8ClampedArray | null
   image: LoadedRasterImage | null
   onError: (message: string) => void
   stageSize: CanvasStageSize
@@ -15,12 +17,19 @@ type UseCanvasRendererOptions = {
 
 export function useCanvasRenderer({
   canvasRef,
+  displayRgba,
   image,
   onError,
   stageSize,
 }: UseCanvasRendererOptions): void {
   useEffect(() => {
-    if (!image || !canvasRef.current || !stageSize.width || !stageSize.height) {
+    if (
+      !image ||
+      !displayRgba ||
+      !canvasRef.current ||
+      !stageSize.width ||
+      !stageSize.height
+    ) {
       return
     }
 
@@ -59,13 +68,12 @@ export function useCanvasRenderer({
     context.shadowBlur = 32
     context.shadowColor = 'rgba(0, 0, 0, 0.34)'
     context.shadowOffsetY = 14
-    context.drawImage(
-      image.bitmap,
-      drawRect.x,
-      drawRect.y,
-      drawRect.width,
-      drawRect.height,
-    )
+    drawRgbaImage(context, {
+      height: image.height,
+      rect: drawRect,
+      rgba: displayRgba,
+      width: image.width,
+    })
     context.restore()
 
     context.save()
@@ -78,5 +86,5 @@ export function useCanvasRenderer({
       Math.round(drawRect.height),
     )
     context.restore()
-  }, [canvasRef, image, onError, stageSize])
+  }, [canvasRef, displayRgba, image, onError, stageSize])
 }
