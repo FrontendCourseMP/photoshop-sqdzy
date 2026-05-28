@@ -14,8 +14,8 @@ import {
 import type { LoadedRasterImage, RasterChannel } from '../lib/raster-image'
 
 const PREVIEW_SIZE = {
-  height: 48,
-  width: 72,
+  height: 30,
+  width: 46,
 }
 
 type ChannelPanelProps = {
@@ -32,9 +32,9 @@ export function ChannelPanel({
   onToggleChannel,
 }: ChannelPanelProps) {
   return (
-    <section>
+    <section className="min-w-0">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
           Каналы
         </h2>
         <span className="text-[11px] text-zinc-500">
@@ -43,7 +43,7 @@ export function ChannelPanel({
       </div>
 
       {image ? (
-        <div className="mt-3 grid gap-2">
+        <div className="mt-2 grid gap-1.5">
           {image.channels.map((channel) => (
             <ChannelToggle
               active={channelState[channel]}
@@ -56,7 +56,7 @@ export function ChannelPanel({
           ))}
         </div>
       ) : (
-        <p className="mt-3 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs leading-5 text-zinc-500">
+        <p className="mt-2 border border-white/[0.08] bg-[#2a2d34] px-3 py-2 text-xs leading-5 text-zinc-500">
           Каналы появятся после загрузки файла.
         </p>
       )}
@@ -86,10 +86,10 @@ function ChannelToggle({
   return (
     <button
       aria-pressed={active}
-      className={`grid grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-3 rounded-md border p-2 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`grid grid-cols-[46px_minmax(0,1fr)_auto] items-center gap-2 border p-1.5 text-left outline-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50 ${
         active
-          ? 'border-sky-300/35 bg-sky-300/[0.08]'
-          : 'border-white/[0.08] bg-white/[0.035] opacity-60 hover:opacity-80'
+          ? 'border-[#8fbdf0]/50 bg-[#d9e9ff]/10'
+          : 'border-white/[0.08] bg-[#2a2d34] opacity-65 hover:opacity-90'
       }`}
       disabled={disabled}
       onClick={onToggle}
@@ -107,9 +107,9 @@ function ChannelToggle({
       </span>
 
       <span
-        className={`rounded border px-2 py-1 text-[11px] font-semibold ${
+        className={`border px-1.5 py-0.5 text-[10px] font-semibold ${
           active
-            ? 'border-sky-300/30 bg-sky-300 text-slate-950'
+            ? 'border-[#8fbdf0]/40 bg-[#d9e9ff] text-[#101318]'
             : 'border-white/10 bg-black/20 text-zinc-500'
         }`}
       >
@@ -199,7 +199,7 @@ function ChannelPreview({
   return (
     <canvas
       aria-hidden="true"
-      className="block h-12 w-[72px] rounded border border-black/30 bg-black/20"
+      className="block h-[30px] w-[46px] border border-black/30 bg-black/20"
       ref={previewRef}
     />
   )

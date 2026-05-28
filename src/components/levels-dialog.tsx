@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -35,6 +36,13 @@ type LevelsDialogProps = {
 }
 
 type ActiveMarker = 'black' | 'gamma' | 'white'
+type DialogPosition = { x: number; y: number }
+type DialogDragState = {
+  height: number
+  offsetX: number
+  offsetY: number
+  width: number
+}
 
 export function LevelsDialog({
   image,
@@ -44,14 +52,16 @@ export function LevelsDialog({
   open,
 }: LevelsDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const dialogDragRef = useRef<DialogDragState | null>(null)
   const [histogramScale, setHistogramScale] =
     useState<HistogramScale>('linear')
   const [histogram, setHistogram] = useState<Uint32Array | null>(null)
   const [isHistogramPending, setIsHistogramPending] = useState(false)
-  const [isPreviewEnabled, setIsPreviewEnabled] = useState(true)
   const [isComparingOriginal, setIsComparingOriginal] = useState(false)
   const [isPreviewPending, setIsPreviewPending] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
+  const [dialogPosition, setDialogPosition] =
+    useState<DialogPosition | null>(null)
   const [selectedTarget, setSelectedTarget] = useState<LevelsTarget>('master')
   const maxValue = image ? getLevelsMaxValue(image) : 255
   const [settings, setSettings] = useState<LevelsSettings>(() =>
@@ -91,7 +101,6 @@ export function LevelsDialog({
     setSettings(createDefaultLevelsSettings(nextMaxValue))
     setSelectedTarget(nextTargets[0] ?? 'master')
     setHistogramScale('linear')
-    setIsPreviewEnabled(true)
     setIsComparingOriginal(false)
   }, [image, open])
 
@@ -135,7 +144,6 @@ export function LevelsDialog({
       if (
         !open ||
         !image ||
-        !isPreviewEnabled ||
         isComparingOriginal ||
         areLevelsSettingsDefault(settings, maxValue)
       ) {
@@ -171,7 +179,6 @@ export function LevelsDialog({
   }, [
     image,
     isComparingOriginal,
-    isPreviewEnabled,
     maxValue,
     onPreviewChange,
     open,
@@ -232,18 +239,88 @@ export function LevelsDialog({
     setHistogramScale(event.target.value as HistogramScale)
   }
 
+  function startDialogDrag(event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0) {
+      return
+    }
+
+    const target = event.target as HTMLElement | null
+
+    if (target?.closest('button, input, select, textarea')) {
+      return
+    }
+
+    const dialog = dialogRef.current
+
+    if (!dialog) {
+      return
+    }
+
+    const rect = dialog.getBoundingClientRect()
+
+    dialogDragRef.current = {
+      height: rect.height,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      width: rect.width,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setDialogPosition({ x: rect.left, y: rect.top })
+  }
+
+  function moveDialog(event: ReactPointerEvent<HTMLElement>) {
+    const dragState = dialogDragRef.current
+
+    if (!dragState || !event.currentTarget.hasPointerCapture(event.pointerId)) {
+      return
+    }
+
+    setDialogPosition(
+      clampDialogPosition({
+        height: dragState.height,
+        width: dragState.width,
+        x: event.clientX - dragState.offsetX,
+        y: event.clientY - dragState.offsetY,
+      }),
+    )
+  }
+
+  function endDialogDrag(event: ReactPointerEvent<HTMLElement>) {
+    dialogDragRef.current = null
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  const dialogStyle: CSSProperties | undefined = dialogPosition
+    ? {
+        left: dialogPosition.x,
+        right: 'auto',
+        top: dialogPosition.y,
+      }
+    : undefined
+
   return (
     <dialog
       aria-labelledby="levels-dialog-title"
-      className="fixed bottom-3 left-3 right-3 top-3 m-0 h-[calc(100svh-24px)] w-auto max-w-none overflow-hidden rounded-lg border border-white/[0.14] bg-[#252831]/95 p-0 text-zinc-100 shadow-[0_28px_90px_rgba(0,0,0,0.54)] outline-none backdrop:bg-transparent sm:bottom-12 sm:left-auto sm:right-4 sm:top-16 sm:h-auto sm:max-h-[calc(100svh-112px)] sm:w-[420px]"
+      className="fixed left-auto right-4 top-20 m-0 w-[min(680px,calc(100vw-32px))] max-w-none overflow-hidden border border-white/[0.14] bg-[#252831] p-0 text-zinc-100 outline-none backdrop:bg-transparent max-[760px]:right-2 max-[760px]:top-12 max-[760px]:w-[calc(100vw-16px)]"
       onCancel={(event) => {
         event.preventDefault()
         cancelDialog()
       }}
       ref={dialogRef}
+      style={dialogStyle}
     >
-      <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
-        <header className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-3 py-3 sm:px-4">
+      <div className="grid overflow-hidden">
+        <header
+          className="flex cursor-move select-none items-start justify-between gap-4 border-b border-white/[0.08] px-3 py-2"
+          onPointerCancel={endDialogDrag}
+          onPointerDown={startDialogDrag}
+          onPointerMove={moveDialog}
+          onPointerUp={endDialogDrag}
+          title="Перетащить окно уровней"
+        >
           <div>
             <h2
               className="text-sm font-semibold leading-5 text-zinc-50"
@@ -258,21 +335,23 @@ export function LevelsDialog({
 
           <button
             aria-label="Закрыть уровни"
-            className="h-8 w-8 shrink-0 cursor-pointer rounded border border-white/10 bg-white/[0.04] text-lg leading-none text-zinc-300 outline-none transition hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-7 w-7 shrink-0 cursor-pointer border border-white/10 bg-white/[0.04] text-lg leading-none text-zinc-300 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={isApplying}
             onClick={cancelDialog}
+            onPointerDown={(event) => event.stopPropagation()}
             type="button"
           >
             ×
           </button>
         </header>
 
-        <div className="grid min-h-0 content-start gap-4 overflow-y-auto p-3 sm:p-4">
-          <section className="min-w-0">
-            <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid min-h-0 gap-3 overflow-hidden p-3">
+          <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_168px] gap-3 max-[760px]:grid-cols-1">
+            <section className="min-w-0">
+              <div className="grid grid-cols-2 gap-3">
               <FormField label="Канал">
                 <select
-                  className="h-8 min-w-40 rounded border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+                  className="h-8 min-w-0 border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
                   onChange={selectTarget}
                   value={selectedTarget}
                 >
@@ -286,7 +365,7 @@ export function LevelsDialog({
 
               <FormField label="Шкала">
                 <select
-                  className="h-8 min-w-36 rounded border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+                  className="h-8 min-w-0 border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
                   onChange={selectHistogramScale}
                   value={histogramScale}
                 >
@@ -294,118 +373,99 @@ export function LevelsDialog({
                   <option value="logarithmic">Логарифмическая</option>
                 </select>
               </FormField>
-            </div>
+              </div>
 
-            <div className="relative mt-4 rounded-md border border-white/[0.08] bg-[#1b1e24] p-2">
-              <HistogramCanvas
-                histogram={histogram}
-                scale={histogramScale}
-                target={selectedTarget}
-              />
-              {isHistogramPending ? (
-                <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded bg-[#1b1e24]/70 text-xs font-semibold text-zinc-400">
-                  Считаю гистограмму...
-                </div>
-              ) : null}
-            </div>
-
-            <MarkerRail
-              adjustment={selectedAdjustment}
-              maxValue={maxValue}
-              onChange={updateAdjustment}
-            />
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <LevelInput
-                label="Чёрная точка"
-                max={selectedAdjustment.white - 1}
-                min={0}
-                onChange={(black) => updateAdjustment({ black })}
-                value={selectedAdjustment.black}
-              />
-              <GammaInput
-                onChange={(gamma) => updateAdjustment({ gamma })}
-                value={selectedAdjustment.gamma}
-              />
-              <LevelInput
-                label="Белая точка"
-                max={maxValue}
-                min={selectedAdjustment.black + 1}
-                onChange={(white) => updateAdjustment({ white })}
-                value={selectedAdjustment.white}
-              />
-            </div>
-          </section>
-
-          <aside className="grid content-start gap-3 rounded-md border border-white/[0.08] bg-white/[0.035] p-3">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-white/[0.08] bg-black/15 px-3 py-2 text-xs font-semibold text-zinc-100">
-                <span>Предпросмотр</span>
-                <input
-                  checked={isPreviewEnabled}
-                  className="h-4 w-4 accent-sky-300"
-                  onChange={(event) => {
-                    setIsPreviewEnabled(event.target.checked)
-                    setIsComparingOriginal(false)
-                  }}
-                  type="checkbox"
+              <div className="relative mt-3 border border-white/[0.08] bg-[#1b1e24] p-2">
+                <HistogramCanvas
+                  histogram={histogram}
+                  scale={histogramScale}
+                  target={selectedTarget}
                 />
-              </label>
+                {isHistogramPending ? (
+                  <div className="pointer-events-none absolute inset-3 flex items-center justify-center bg-[#1b1e24]/70 text-xs font-semibold text-zinc-400">
+                    Считаю гистограмму...
+                  </div>
+                ) : null}
+              </div>
 
-              <button
-                aria-pressed={isComparingOriginal}
-                className="h-9 cursor-pointer rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-zinc-100 aria-pressed:text-slate-950"
-                disabled={!isPreviewEnabled}
-                onPointerCancel={() => setIsComparingOriginal(false)}
-                onPointerDown={() => setIsComparingOriginal(true)}
-                onPointerLeave={() => setIsComparingOriginal(false)}
-                onPointerUp={() => setIsComparingOriginal(false)}
-                type="button"
-              >
-                До
-              </button>
-            </div>
-
-            <dl className="grid gap-2 text-xs">
-              <SummaryRow label="Диапазон" value={`0-${maxValue}`} />
-              <SummaryRow
-                label="Канал"
-                value={LEVEL_TARGET_LABELS[selectedTarget]}
+              <MarkerRail
+                adjustment={selectedAdjustment}
+                maxValue={maxValue}
+                onChange={updateAdjustment}
               />
-              <SummaryRow
-                label="Preview"
-                value={
-                  isComparingOriginal
-                    ? 'до'
-                    : isPreviewPending
-                    ? 'пересчёт'
-                    : isPreviewEnabled
-                      ? 'включён'
-                      : 'выключен'
-                }
-              />
-            </dl>
+            </section>
 
-            <p className="rounded-md border border-white/[0.08] bg-[#1d2026] px-3 py-2 text-xs leading-5 text-zinc-400">
-              Master меняет RGB/Gray вместе. Отдельные каналы применяются
-              поверх Master; Alpha меняет только прозрачность.
-            </p>
-          </aside>
+            <aside className="grid content-start gap-3 border border-white/[0.08] bg-white/[0.035] p-3 max-[760px]:hidden">
+              <dl className="grid gap-2 text-xs">
+                <SummaryRow label="Диапазон" value={`0-${maxValue}`} />
+                <SummaryRow
+                  label="Канал"
+                  value={LEVEL_TARGET_LABELS[selectedTarget]}
+                />
+                <SummaryRow
+                  label="Состояние"
+                  value={
+                    isComparingOriginal
+                      ? 'до'
+                      : isPreviewPending
+                        ? 'пересчёт'
+                        : 'после'
+                  }
+                />
+              </dl>
+            </aside>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <LevelInput
+              label="Чёрная точка"
+              max={selectedAdjustment.white - 1}
+              min={0}
+              onChange={(black) => updateAdjustment({ black })}
+              value={selectedAdjustment.black}
+            />
+            <GammaInput
+              onChange={(gamma) => updateAdjustment({ gamma })}
+              value={selectedAdjustment.gamma}
+            />
+            <LevelInput
+              label="Белая точка"
+              max={maxValue}
+              min={selectedAdjustment.black + 1}
+              onChange={(white) => updateAdjustment({ white })}
+              value={selectedAdjustment.white}
+            />
+          </div>
         </div>
 
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] px-3 py-3 sm:px-4">
-          <button
-            className="h-8 cursor-pointer rounded border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isApplying}
-            onClick={resetSettings}
-            type="button"
-          >
-            Сброс
-          </button>
+        <footer className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-3 py-2">
+          <div className="flex min-w-0 gap-2">
+            <button
+              className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isApplying}
+              onClick={resetSettings}
+              type="button"
+            >
+              Сброс
+            </button>
+            <button
+              aria-pressed={isComparingOriginal}
+              className="h-8 cursor-pointer border border-white/10 bg-[#2d3037] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-[#383c44] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-[#d9e9ff] aria-pressed:text-[#101318]"
+              disabled={!image || isApplying}
+              onPointerCancel={() => setIsComparingOriginal(false)}
+              onPointerDown={() => setIsComparingOriginal(true)}
+              onPointerLeave={() => setIsComparingOriginal(false)}
+              onPointerUp={() => setIsComparingOriginal(false)}
+              title="Удерживать для сравнения с исходником"
+              type="button"
+            >
+              {isComparingOriginal ? 'До' : 'После'}
+            </button>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <button
-              className="h-8 cursor-pointer rounded border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={isApplying}
               onClick={cancelDialog}
               type="button"
@@ -413,7 +473,7 @@ export function LevelsDialog({
               Отмена
             </button>
             <button
-              className="h-8 cursor-pointer rounded bg-sky-300 px-3 text-xs font-semibold text-slate-950 outline-none transition hover:bg-sky-200 focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 cursor-pointer border border-[#8fbdf0]/45 bg-[#d9e9ff] px-3 text-xs font-semibold text-[#101318] outline-none transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!image || isApplying}
               onClick={() => void applyDialog()}
               type="button"
@@ -453,7 +513,7 @@ function HistogramCanvas({
 
     const devicePixelRatio = window.devicePixelRatio || 1
     const width = 360
-    const height = 150
+    const height = 112
 
     canvas.width = width * devicePixelRatio
     canvas.height = height * devicePixelRatio
@@ -499,7 +559,7 @@ function HistogramCanvas({
   return (
     <canvas
       aria-label="Гистограмма уровней"
-      className="block w-full rounded bg-[#151820]"
+      className="block w-full bg-[#151820]"
       ref={canvasRef}
     />
   )
@@ -566,7 +626,7 @@ function MarkerRail({
   return (
     <div className="mt-3 px-1">
       <div
-        className="relative h-8 rounded border border-white/[0.08] bg-gradient-to-r from-black via-zinc-500 to-white"
+        className="relative h-8 border border-white/[0.08] bg-gradient-to-r from-black via-zinc-500 to-white"
         ref={railRef}
       >
         <MarkerButton
@@ -622,7 +682,7 @@ function MarkerButton({
   return (
     <button
       aria-label={label}
-      className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize rounded-sm border shadow-[0_0_0_2px_rgba(0,0,0,0.45)] outline-none focus-visible:ring-2 focus-visible:ring-sky-400/80 ${color}`}
+      className={`absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize border outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${color}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       style={{ left: `${left}%` }}
@@ -656,7 +716,7 @@ function LevelInput({
         value={value}
       />
       <input
-        className="mt-1 h-8 w-full rounded border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+        className="mt-1 h-8 w-full border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
         max={max}
         min={min}
         onChange={(event) => onChange(Number(event.target.value))}
@@ -686,7 +746,7 @@ function GammaInput({
         value={value}
       />
       <input
-        className="mt-1 h-8 w-full rounded border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+        className="mt-1 h-8 w-full border border-white/10 bg-[#1d2026] px-2 text-xs text-zinc-100 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
         max="9.9"
         min="0.1"
         onChange={(event) => onChange(Number(event.target.value))}
@@ -711,6 +771,22 @@ function FormField({
       {children}
     </label>
   )
+}
+
+function clampDialogPosition(input: {
+  height: number
+  width: number
+  x: number
+  y: number
+}): DialogPosition {
+  const padding = 8
+  const maxX = Math.max(padding, window.innerWidth - input.width - padding)
+  const maxY = Math.max(padding, window.innerHeight - input.height - padding)
+
+  return {
+    x: Math.min(maxX, Math.max(padding, input.x)),
+    y: Math.min(maxY, Math.max(padding, input.y)),
+  }
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {

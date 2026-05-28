@@ -6,6 +6,7 @@ import {
   useState,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from 'react'
 import { CanvasStage } from './components/canvas-stage'
 import { LevelsDialog } from './components/levels-dialog'
@@ -51,7 +52,7 @@ function App() {
   )
   const [isBusy, setIsBusy] = useState(false)
   const [busyMessage, setBusyMessage] = useState('')
-  const [message, setMessage] = useState('Готов к загрузке PNG, JPG и GB7.')
+  const [message, setMessage] = useState('Готов к загрузке изображения.')
   const [pixelSample, setPixelSample] = useState<PixelSample | null>(null)
   const [isLevelsOpen, setIsLevelsOpen] = useState(false)
   const displayRgbaRef = useRef<Uint8ClampedArray | null>(null)
@@ -251,6 +252,15 @@ function App() {
     void handleExport(mimeType)
   }
 
+  function resetChannels() {
+    if (!image) {
+      return
+    }
+
+    setChannelState(createDefaultChannelState(image.channels))
+    setMessage('Все каналы включены.')
+  }
+
   async function toggleChannel(channel: RasterChannel) {
     if (!image || !image.channels.includes(channel)) {
       return
@@ -294,48 +304,54 @@ function App() {
   }
 
   return (
-    <div className="min-h-[100svh] bg-[#1f2228] text-zinc-100">
-      <div className="grid min-h-[100svh] grid-rows-[auto_minmax(0,1fr)_auto]">
+    <div className="h-dvh overflow-hidden bg-[#181a1f] text-zinc-100">
+      <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto]">
         <TopBar
           activeTool={activeTool}
+          allChannelsVisible={allChannelsVisible}
           disabled={isBusy}
           image={image}
           onExport={exportFromUi}
           onOpenLevels={openLevelsDialog}
           onOpen={openFileDialog}
+          onResetChannels={resetChannels}
           onToolChange={setActiveTool}
         />
 
-        <main className="min-h-0 overflow-y-auto bg-[#1f2228] lg:overflow-hidden">
-          <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
-            <SidePanel
-              activeTool={activeTool}
-              channelState={channelState}
-              disabled={isBusy}
-              image={image}
-              onExport={exportFromUi}
-              onToggleChannel={toggleChannel}
-              onOpen={openFileDialog}
-              pixelSample={pixelSample}
-            />
-            <CanvasStage
-              activeTool={activeTool}
-              busyMessage={busyMessage}
-              canvasRef={canvasRef}
-              image={image}
-              isBusy={isBusy}
-              onCanvasPointerDown={handleCanvasPointerDown}
-              onOpen={openFileDialog}
-              stageRef={stageRef}
-            />
-          </div>
+        <main className="grid min-h-0 grid-cols-[48px_minmax(0,1fr)_286px] bg-[#181a1f] max-[980px]:grid-cols-[44px_minmax(0,1fr)_252px] max-[760px]:grid-cols-1 max-[760px]:grid-rows-[44px_minmax(0,1fr)_168px]">
+          <ToolRail
+            activeTool={activeTool}
+            disabled={isBusy}
+            image={image}
+            onOpenLevels={openLevelsDialog}
+            onToolChange={setActiveTool}
+          />
+
+          <CanvasStage
+            activeTool={activeTool}
+            busyMessage={busyMessage}
+            canvasRef={canvasRef}
+            image={image}
+            isBusy={isBusy}
+            onCanvasPointerDown={handleCanvasPointerDown}
+            stageRef={stageRef}
+          />
+
+          <SidePanel
+            activeTool={activeTool}
+            channelState={channelState}
+            disabled={isBusy}
+            image={image}
+            onToggleChannel={toggleChannel}
+            pixelSample={pixelSample}
+          />
         </main>
 
         <StatusBar image={image} message={message} stageSize={stageSize} />
 
         <input
           accept=".png,.jpg,.jpeg,.gb7,image/png,image/jpeg,image/x-graybit7"
-          aria-label="Выбрать изображение PNG, JPG или GB7"
+          aria-label="Выбрать изображение"
           className="hidden"
           onChange={handleFileChange}
           ref={inputRef}
@@ -351,6 +367,136 @@ function App() {
         />
       </div>
     </div>
+  )
+}
+
+function ToolRail({
+  activeTool,
+  disabled,
+  image,
+  onOpenLevels,
+  onToolChange,
+}: {
+  activeTool: EditorTool
+  disabled: boolean
+  image: LoadedRasterImage | null
+  onOpenLevels: () => void
+  onToolChange: (tool: EditorTool) => void
+}) {
+  return (
+    <nav
+      aria-label="Панель инструментов"
+      className="flex min-h-0 flex-col items-center gap-1 border-r border-black/50 bg-[#24262c] px-1.5 py-2 max-[760px]:flex-row max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:px-2 max-[760px]:py-1"
+    >
+      <RailButton
+        active={activeTool === 'cursor'}
+        disabled={disabled}
+        icon={<CursorIcon />}
+        label="Курсор"
+        onClick={() => onToolChange('cursor')}
+      />
+      <RailButton
+        active={activeTool === 'eyedropper'}
+        disabled={disabled || !image}
+        icon={<EyedropperIcon />}
+        label="Пипетка"
+        onClick={() => onToolChange('eyedropper')}
+      />
+      <div className="my-1 h-px w-7 bg-white/[0.08] max-[760px]:mx-1 max-[760px]:my-0 max-[760px]:h-7 max-[760px]:w-px" />
+      <RailButton
+        disabled={disabled || !image}
+        icon={<LevelsIcon />}
+        label="Уровни"
+        onClick={onOpenLevels}
+      />
+    </nav>
+  )
+}
+
+function RailButton({
+  active = false,
+  disabled,
+  icon,
+  label,
+  onClick,
+}: {
+  active?: boolean
+  disabled: boolean
+  icon: ReactNode
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={active || undefined}
+      className={`grid h-8 w-8 shrink-0 cursor-pointer place-items-center border text-[11px] font-semibold outline-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-45 ${
+        active
+          ? 'border-[#8fbdf0] bg-[#d9e9ff] text-[#101318]'
+          : 'border-white/[0.1] bg-[#2d3037] text-zinc-300 hover:bg-[#343841]'
+      }`}
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {icon}
+    </button>
+  )
+}
+
+function CursorIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 16 16"
+    >
+      <path
+        d="M3.5 2.5 12 8l-4.3 1.1L5.5 14 3.5 2.5Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  )
+}
+
+function EyedropperIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 16 16"
+    >
+      <path
+        d="m10.9 2.7 2.4 2.4m-8 7.2 6.9-6.9-1.6-1.6-6.9 6.9-.8 2.4 2.4-.8Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  )
+}
+
+function LevelsIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      viewBox="0 0 16 16"
+    >
+      <path
+        d="M3 13V5m5 8V3m5 10V7M1.8 5h2.4m2.6-2h2.4m2.6 4h2.4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.4"
+      />
+    </svg>
   )
 }
 

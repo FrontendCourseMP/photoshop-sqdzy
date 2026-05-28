@@ -72,8 +72,7 @@ export function FileMenu({
       <button
         aria-expanded={isOpen}
         aria-haspopup="menu"
-        className="h-8 rounded-md border border-white/10 bg-white/[0.08] px-3 text-sm font-medium text-zinc-100 outline-none transition hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-sky-400/70 disabled:cursor-not-allowed disabled:opacity-50"
-        disabled={disabled}
+        className="h-8 cursor-pointer px-3 text-zinc-100 outline-none transition hover:bg-[#363a42] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:text-zinc-600 disabled:hover:bg-transparent"
         onClick={() => setIsOpen((currentValue) => !currentValue)}
         type="button"
       >
@@ -82,11 +81,11 @@ export function FileMenu({
 
       {isOpen ? (
         <div
-          className="absolute left-0 top-[calc(100%+8px)] z-40 min-w-[230px] rounded-md border border-white/[0.12] bg-[#24262d] p-1 shadow-[0_18px_38px_rgba(0,0,0,0.42)]"
+          className="absolute left-0 top-full z-40 min-w-[220px] border border-black/60 bg-[#292c33] p-1"
           role="menu"
         >
           <button
-            className="flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-1.5 text-left text-sm text-zinc-100 outline-none transition hover:bg-white/[0.08] focus-visible:bg-white/[0.1] disabled:cursor-not-allowed disabled:text-zinc-500"
+            className="flex w-full cursor-pointer items-center justify-between px-2.5 py-1.5 text-left text-sm text-zinc-100 outline-none transition hover:bg-[#3a3e46] focus-visible:bg-[#3a3e46] disabled:cursor-not-allowed disabled:text-zinc-500"
             disabled={disabled}
             onClick={selectOpen}
             role="menuitem"
@@ -99,7 +98,7 @@ export function FileMenu({
 
           {EXPORT_ITEMS.map((item) => (
             <button
-              className="flex w-full cursor-pointer items-center justify-between rounded px-2.5 py-1.5 text-left text-sm text-zinc-100 outline-none transition hover:bg-white/[0.08] focus-visible:bg-white/[0.1] disabled:cursor-not-allowed disabled:text-zinc-500"
+              className="flex w-full cursor-pointer items-center justify-between px-2.5 py-1.5 text-left text-sm text-zinc-100 outline-none transition hover:bg-[#3a3e46] focus-visible:bg-[#3a3e46] disabled:cursor-not-allowed disabled:text-zinc-500"
               disabled={!canExport || disabled}
               key={item.mimeType}
               onClick={() => selectExport(item.mimeType)}

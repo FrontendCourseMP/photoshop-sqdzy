@@ -9,13 +9,13 @@ type StatusBarProps = {
 
 export function StatusBar({ image, message, stageSize }: StatusBarProps) {
   return (
-    <footer className="border-t border-black/40 bg-[#2b2e35]">
-      <div className="flex min-h-8 flex-col gap-1 px-3 py-1.5 text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:gap-x-4 sm:px-4">
-        <span className="min-w-0 truncate text-zinc-300 sm:flex-1">
+    <footer className="border-t border-black/55 bg-[#282b31]">
+      <div className="flex min-h-7 items-center gap-4 px-3 text-xs text-zinc-400">
+        <span className="min-w-0 flex-1 truncate text-zinc-300">
           {message}
         </span>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:flex sm:flex-wrap sm:items-center">
+        <div className="hidden items-center gap-4 md:flex">
           <span>{image ? `${image.width} × ${image.height}px` : '— × —'}</span>
           <span>
             {image ? `${image.bitDepth}-bit ${image.colorModel}` : 'Цвет: —'}

@@ -11,17 +11,22 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+html,
+body {
+  block-size: 100%;
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  background: #1f2228;
+  background: #181a1f;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
 }
 
 #root {
-  min-height: 100svh;
+  block-size: 100%;
 }
 
 button,
@@ -31,8 +36,4 @@ input {
 
 ::selection {
   background: rgba(56, 189, 248, 0.32);
-}
-
-* {
-  scrollbar-color: rgba(161, 161, 170, 0.45) transparent;
 }
