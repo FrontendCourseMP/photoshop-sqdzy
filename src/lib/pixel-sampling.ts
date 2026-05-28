@@ -1,4 +1,4 @@
-import { getImageFitRect } from './canvas-preview'
+import { getCenteredImageRect } from './canvas-preview'
 import { rgbToCielab, type CielabColor } from './color-space'
 import type { LoadedRasterImage } from './raster-image'
 
@@ -22,13 +22,23 @@ export function getImageCoordinatesFromCanvasPoint(input: {
   clientY: number
   imageHeight: number
   imageWidth: number
+  renderedImageHeight: number
+  renderedImageWidth: number
 }): ImageCoordinates | null {
-  const { canvasRect, clientX, clientY, imageHeight, imageWidth } = input
-  const pointX = clientX - canvasRect.left
-  const pointY = clientY - canvasRect.top
-  const drawRect = getImageFitRect({
+  const {
+    canvasRect,
+    clientX,
+    clientY,
     imageHeight,
     imageWidth,
+    renderedImageHeight,
+    renderedImageWidth,
+  } = input
+  const pointX = clientX - canvasRect.left
+  const pointY = clientY - canvasRect.top
+  const drawRect = getCenteredImageRect({
+    imageHeight: renderedImageHeight,
+    imageWidth: renderedImageWidth,
     stageHeight: canvasRect.height,
     stageWidth: canvasRect.width,
   })

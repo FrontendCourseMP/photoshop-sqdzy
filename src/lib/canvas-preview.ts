@@ -38,6 +38,20 @@ export function getImageFitRect(input: {
   }
 }
 
+export function getCenteredImageRect(input: {
+  imageHeight: number
+  imageWidth: number
+  stageHeight: number
+  stageWidth: number
+}): DrawRect {
+  return {
+    height: input.imageHeight,
+    width: input.imageWidth,
+    x: (input.stageWidth - input.imageWidth) / 2,
+    y: (input.stageHeight - input.imageHeight) / 2,
+  }
+}
+
 export function drawTransparencyGrid(
   context: CanvasRenderingContext2D,
   rect: DrawRect,

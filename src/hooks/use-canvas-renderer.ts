@@ -1,28 +1,32 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import {
+  getCenteredImageRect,
   drawRgbaImage,
   drawTransparencyGrid,
-  getImageFitRect,
   type CanvasStageSize,
 } from '../lib/canvas-preview'
 import type { LoadedRasterImage } from '../lib/raster-image'
 
+export type RenderedCanvasImage = {
+  height: number
+  rgba: Uint8ClampedArray
+  width: number
+}
+
 type UseCanvasRendererOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>
-  displayRgba: Uint8ClampedArray | null
-  displayVersion: number
   image: LoadedRasterImage | null
   onError: (message: string) => void
+  renderedImage: RenderedCanvasImage | null
   stageSize: CanvasStageSize
   onRenderComplete?: () => void
 }
 
 export function useCanvasRenderer({
   canvasRef,
-  displayRgba,
-  displayVersion,
   image,
   onError,
+  renderedImage,
   stageSize,
   onRenderComplete,
 }: UseCanvasRendererOptions): void {
@@ -35,7 +39,7 @@ export function useCanvasRenderer({
   useEffect(() => {
     if (
       !image ||
-      !displayRgba ||
+      !renderedImage ||
       !canvasRef.current ||
       !stageSize.width ||
       !stageSize.height
@@ -63,12 +67,11 @@ export function useCanvasRenderer({
 
       context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0)
       context.clearRect(0, 0, width, height)
-      context.imageSmoothingEnabled = true
-      context.imageSmoothingQuality = 'high'
+      context.imageSmoothingEnabled = false
 
-      const drawRect = getImageFitRect({
-        imageHeight: image.height,
-        imageWidth: image.width,
+      const drawRect = getCenteredImageRect({
+        imageHeight: renderedImage.height,
+        imageWidth: renderedImage.width,
         stageHeight: height,
         stageWidth: width,
       })
@@ -79,22 +82,12 @@ export function useCanvasRenderer({
       context.shadowBlur = 32
       context.shadowColor = 'rgba(0, 0, 0, 0.34)'
       context.shadowOffsetY = 14
-      if (displayRgba === image.rgba) {
-        context.drawImage(
-          image.bitmap,
-          drawRect.x,
-          drawRect.y,
-          drawRect.width,
-          drawRect.height,
-        )
-      } else {
-        drawRgbaImage(context, {
-          height: image.height,
-          rect: drawRect,
-          rgba: displayRgba,
-          width: image.width,
-        })
-      }
+      drawRgbaImage(context, {
+        height: renderedImage.height,
+        rect: drawRect,
+        rgba: renderedImage.rgba,
+        width: renderedImage.width,
+      })
       context.restore()
 
       context.save()
@@ -114,5 +107,5 @@ export function useCanvasRenderer({
     return () => {
       clearTimeout(timeoutId)
     }
-  }, [canvasRef, displayRgba, displayVersion, image, onError, stageSize])
+  }, [canvasRef, image, onError, renderedImage, stageSize])
 }

@@ -263,6 +263,40 @@ export async function createRasterImageWithPixels(
   })
 }
 
+export async function createRasterImageWithDimensions(input: {
+  height: number
+  image: LoadedRasterImage
+  rgba: Uint8ClampedArray
+  width: number
+}): Promise<LoadedRasterImage> {
+  const { height, image, rgba, width } = input
+
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    throw new Error('Новый размер изображения должен быть целым положительным.')
+  }
+
+  if (rgba.length !== width * height * 4) {
+    throw new Error('Некорректный RGBA-буфер для нового размера изображения.')
+  }
+
+  const bitmapBytes = new Uint8ClampedArray(rgba.length)
+
+  bitmapBytes.set(rgba)
+
+  return createLoadedRasterImage({
+    bitmap: await createImageBitmap(new ImageData(bitmapBytes, width, height)),
+    bitDepth: image.bitDepth,
+    channels: image.channels,
+    colorModel: image.colorModel,
+    format: image.format,
+    height,
+    mimeType: image.mimeType,
+    name: image.name,
+    rgba,
+    width,
+  })
+}
+
 export function buildDownloadName(
   originalName: string,
   mimeType: SupportedRasterMimeType,

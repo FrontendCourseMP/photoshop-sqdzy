@@ -14,6 +14,7 @@ type TopBarProps = {
   onExport: (mimeType: SupportedRasterMimeType) => void
   onOpen: () => void
   onOpenLevels: () => void
+  onOpenResize: () => void
   onResetChannels: () => void
   onToolChange: (tool: EditorTool) => void
 }
@@ -33,6 +34,7 @@ export function TopBar({
   onExport,
   onOpen,
   onOpenLevels,
+  onOpenResize,
   onResetChannels,
   onToolChange,
 }: TopBarProps) {
@@ -49,6 +51,11 @@ export function TopBar({
 
           <MenuDropdown
             items={[
+              {
+                disabled: !image || disabled,
+                label: 'Размер изображения...',
+                onSelect: onOpenResize,
+              },
               {
                 checked: Boolean(image && allChannelsVisible),
                 disabled: !image || disabled,

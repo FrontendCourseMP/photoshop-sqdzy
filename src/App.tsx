@@ -10,10 +10,14 @@ import {
 } from 'react'
 import { CanvasStage } from './components/canvas-stage'
 import { LevelsDialog } from './components/levels-dialog'
+import { ResizeDialog } from './components/resize-dialog'
 import { SidePanel } from './components/side-panel'
 import { StatusBar } from './components/status-bar'
 import { TopBar } from './components/top-bar'
-import { useCanvasRenderer } from './hooks/use-canvas-renderer'
+import {
+  useCanvasRenderer,
+  type RenderedCanvasImage,
+} from './hooks/use-canvas-renderer'
 import { useElementSize } from './hooks/use-element-size'
 import {
   applyChannelStateAsync,
@@ -29,7 +33,16 @@ import {
   type PixelSample,
 } from './lib/pixel-sampling'
 import {
+  DEFAULT_INTERPOLATION_METHOD,
+  calculateInitialDisplayScalePercent,
+  clampDisplayScalePercent,
+  getScaledDimensions,
+  scaleRgbaImageAsync,
+  type InterpolationMethod,
+} from './lib/image-scaling'
+import {
   buildDownloadName,
+  createRasterImageWithDimensions,
   createRasterImageWithPixels,
   exportRasterImage,
   loadRasterImage,
@@ -55,6 +68,13 @@ function App() {
   const [message, setMessage] = useState('Готов к загрузке изображения.')
   const [pixelSample, setPixelSample] = useState<PixelSample | null>(null)
   const [isLevelsOpen, setIsLevelsOpen] = useState(false)
+  const [isResizeOpen, setIsResizeOpen] = useState(false)
+  const [displayScalePercent, setDisplayScalePercent] = useState(100)
+  const [needsInitialFit, setNeedsInitialFit] = useState(false)
+  const [interpolationMethod, setInterpolationMethod] =
+    useState<InterpolationMethod>(DEFAULT_INTERPOLATION_METHOD)
+  const [renderedImage, setRenderedImage] =
+    useState<RenderedCanvasImage | null>(null)
   const displayRgbaRef = useRef<Uint8ClampedArray | null>(null)
   const [displayVersion, setDisplayVersion] = useState(0)
   const levelsPreviewRgbaRef = useRef<Uint8ClampedArray | null>(null)
@@ -88,6 +108,16 @@ function App() {
     }
   }, [image])
 
+  const openResizeDialog = useCallback(() => {
+    if (image) {
+      setIsResizeOpen(true)
+    }
+  }, [image])
+
+  const closeResizeDialog = useCallback(() => {
+    setIsResizeOpen(false)
+  }, [])
+
   const applyLevels = useCallback(
     async (nextRgba: Uint8ClampedArray) => {
       if (!image) {
@@ -118,10 +148,9 @@ function App() {
 
   useCanvasRenderer({
     canvasRef,
-    displayRgba,
-    displayVersion,
     image,
     onError: setMessage,
+    renderedImage,
     stageSize,
     onRenderComplete: () => {
       setIsBusy(false)
@@ -183,6 +212,71 @@ function App() {
     levelsPreviewVersion,
   ])
 
+  useEffect(() => {
+    if (!needsInitialFit || !image || !stageSize.width || !stageSize.height) {
+      return
+    }
+
+    setDisplayScalePercent(
+      calculateInitialDisplayScalePercent({
+        imageHeight: image.height,
+        imageWidth: image.width,
+        stageHeight: stageSize.height,
+        stageWidth: stageSize.width,
+      }),
+    )
+    setNeedsInitialFit(false)
+  }, [image, needsInitialFit, stageSize.height, stageSize.width])
+
+  useEffect(() => {
+    let isCancelled = false
+
+    if (!image || !displayRgba) {
+      setRenderedImage(null)
+      return
+    }
+
+    if (displayRgba.length !== image.width * image.height * 4) {
+      setRenderedImage(null)
+      return
+    }
+
+    const targetSize = getScaledDimensions({
+      height: image.height,
+      scalePercent: displayScalePercent,
+      width: image.width,
+    })
+
+    void scaleRgbaImageAsync({
+      method: interpolationMethod,
+      rgba: displayRgba,
+      sourceHeight: image.height,
+      sourceWidth: image.width,
+      targetHeight: targetSize.height,
+      targetWidth: targetSize.width,
+    })
+      .then((nextRenderedImage) => {
+        if (!isCancelled) {
+          setRenderedImage(nextRenderedImage)
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          setMessage(getErrorMessage(error))
+        }
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [
+    displayRgba,
+    displayScalePercent,
+    displayVersion,
+    image,
+    interpolationMethod,
+  ])
+
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
 
@@ -199,9 +293,24 @@ function App() {
 
     try {
       const nextImage = await loadRasterImage(file)
+      const nextDisplayScalePercent =
+        stageSize.width && stageSize.height
+          ? calculateInitialDisplayScalePercent({
+              imageHeight: nextImage.height,
+              imageWidth: nextImage.width,
+              stageHeight: stageSize.height,
+              stageWidth: stageSize.width,
+            })
+          : 100
 
       handleLevelsPreviewChange(null)
+      displayRgbaRef.current = nextImage.rgba
       setIsLevelsOpen(false)
+      setIsResizeOpen(false)
+      setDisplayScalePercent(nextDisplayScalePercent)
+      setRenderedImage(null)
+      setDisplayVersion((version) => version + 1)
+      setNeedsInitialFit(!(stageSize.width && stageSize.height))
       setImage(nextImage)
       setChannelState(createDefaultChannelState(nextImage.channels))
       setPixelSample(null)
@@ -252,6 +361,10 @@ function App() {
     void handleExport(mimeType)
   }
 
+  function changeDisplayScale(nextScalePercent: number) {
+    setDisplayScalePercent(clampDisplayScalePercent(nextScalePercent))
+  }
+
   function resetChannels() {
     if (!image) {
       return
@@ -259,6 +372,56 @@ function App() {
 
     setChannelState(createDefaultChannelState(image.channels))
     setMessage('Все каналы включены.')
+  }
+
+  async function applyResize(input: {
+    height: number
+    method: InterpolationMethod
+    width: number
+  }) {
+    if (!image) {
+      return
+    }
+
+    setIsBusy(true)
+    setBusyMessage('Масштабирую изображение.')
+    setMessage('Создаю изображение в новом размере...')
+    await waitForNextPaint()
+
+    try {
+      const scaledImage = await scaleRgbaImageAsync({
+        method: input.method,
+        rgba: image.rgba,
+        sourceHeight: image.height,
+        sourceWidth: image.width,
+        targetHeight: input.height,
+        targetWidth: input.width,
+      })
+      const nextImage = await createRasterImageWithDimensions({
+        height: scaledImage.height,
+        image,
+        rgba: scaledImage.rgba,
+        width: scaledImage.width,
+      })
+
+      handleLevelsPreviewChange(null)
+      displayRgbaRef.current = nextImage.rgba
+      setIsLevelsOpen(false)
+      setIsResizeOpen(false)
+      setInterpolationMethod(input.method)
+      setRenderedImage(null)
+      setDisplayVersion((version) => version + 1)
+      setImage(nextImage)
+      setChannelState(createDefaultChannelState(nextImage.channels))
+      setPixelSample(null)
+      setMessage(
+        `Размер изменён: ${nextImage.width} × ${nextImage.height}px.`,
+      )
+    } catch (error) {
+      setMessage(getErrorMessage(error))
+      setIsBusy(false)
+      setBusyMessage('')
+    }
   }
 
   async function toggleChannel(channel: RasterChannel) {
@@ -278,7 +441,12 @@ function App() {
   function handleCanvasPointerDown(
     event: ReactPointerEvent<HTMLCanvasElement>,
   ) {
-    if (!image || activeTool !== 'eyedropper' || event.button !== 0) {
+    if (
+      !image ||
+      !renderedImage ||
+      activeTool !== 'eyedropper' ||
+      event.button !== 0
+    ) {
       return
     }
 
@@ -288,6 +456,8 @@ function App() {
       clientY: event.clientY,
       imageHeight: image.height,
       imageWidth: image.width,
+      renderedImageHeight: renderedImage.height,
+      renderedImageWidth: renderedImage.width,
     })
 
     if (!coordinates) {
@@ -314,6 +484,7 @@ function App() {
           onExport={exportFromUi}
           onOpenLevels={openLevelsDialog}
           onOpen={openFileDialog}
+          onOpenResize={openResizeDialog}
           onResetChannels={resetChannels}
           onToolChange={setActiveTool}
         />
@@ -347,7 +518,13 @@ function App() {
           />
         </main>
 
-        <StatusBar image={image} message={message} stageSize={stageSize} />
+        <StatusBar
+          displayScalePercent={displayScalePercent}
+          image={image}
+          message={message}
+          onDisplayScaleChange={changeDisplayScale}
+          stageSize={stageSize}
+        />
 
         <input
           accept=".png,.jpg,.jpeg,.gb7,image/png,image/jpeg,image/x-graybit7"
@@ -365,6 +542,16 @@ function App() {
           onPreviewChange={handleLevelsPreviewChange}
           open={isLevelsOpen}
         />
+
+        {isResizeOpen ? (
+          <ResizeDialog
+            defaultMethod={interpolationMethod}
+            image={image}
+            onApply={(input) => void applyResize(input)}
+            onClose={closeResizeDialog}
+            open={isResizeOpen}
+          />
+        ) : null}
       </div>
     </div>
   )
