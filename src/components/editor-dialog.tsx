@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 
-type DialogPosition = { x: number; y: number }
+export type DialogPosition = { x: number; y: number }
 type DialogDragState = {
   height: number
   offsetX: number
@@ -17,22 +17,30 @@ type DialogDragState = {
 
 type EditorDialogProps = {
   children: ReactNode
+  closeDisabled?: boolean
+  defaultPosition?: DialogPosition
   description?: string
   footer?: ReactNode
   labelledById: string
   onClose: () => void
+  onPositionChange?: (position: DialogPosition) => void
   open: boolean
+  position?: DialogPosition | null
   title: string
   widthClassName?: string
 }
 
 export function EditorDialog({
   children,
+  closeDisabled = false,
+  defaultPosition,
   description,
   footer,
   labelledById,
   onClose,
+  onPositionChange,
   open,
+  position,
   title,
   widthClassName = 'w-[min(560px,calc(100vw-32px))]',
 }: EditorDialogProps) {
@@ -94,14 +102,15 @@ export function EditorDialog({
       return
     }
 
-    setDialogPosition(
-      clampDialogPosition({
+    const nextPosition = clampDialogPosition({
         height: dragState.height,
         width: dragState.width,
         x: event.clientX - dragState.offsetX,
         y: event.clientY - dragState.offsetY,
-      }),
-    )
+      })
+
+    setDialogPosition(nextPosition)
+    onPositionChange?.(nextPosition)
   }
 
   function endDialogDrag(event: ReactPointerEvent<HTMLElement>) {
@@ -112,11 +121,12 @@ export function EditorDialog({
     }
   }
 
-  const dialogStyle: CSSProperties | undefined = dialogPosition
+  const resolvedDialogPosition = dialogPosition ?? position ?? defaultPosition
+  const dialogStyle: CSSProperties | undefined = resolvedDialogPosition
     ? {
-        left: dialogPosition.x,
+        left: resolvedDialogPosition.x,
         right: 'auto',
-        top: dialogPosition.y,
+        top: resolvedDialogPosition.y,
       }
     : undefined
 
@@ -154,7 +164,8 @@ export function EditorDialog({
 
           <button
             aria-label="Закрыть окно"
-            className="h-7 w-7 shrink-0 cursor-pointer border border-white/10 bg-white/[0.04] text-lg leading-none text-zinc-300 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
+            className="h-7 w-7 shrink-0 cursor-pointer border border-white/10 bg-white/[0.04] text-lg leading-none text-zinc-300 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={closeDisabled}
             onClick={onClose}
             onPointerDown={(event) => event.stopPropagation()}
             type="button"

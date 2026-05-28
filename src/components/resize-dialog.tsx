@@ -4,7 +4,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
-import { EditorDialog } from './editor-dialog'
+import { EditorDialog, type DialogPosition } from './editor-dialog'
 import {
   INTERPOLATION_METHODS,
   getInterpolationMethodInfo,
@@ -21,6 +21,7 @@ type ResizeUnit = 'percent' | 'pixels'
 
 type ResizeDialogProps = {
   defaultMethod: InterpolationMethod
+  defaultPosition?: DialogPosition
   image: LoadedRasterImage | null
   onApply: (input: {
     height: number
@@ -28,15 +29,20 @@ type ResizeDialogProps = {
     width: number
   }) => void
   onClose: () => void
+  onPositionChange?: (position: DialogPosition) => void
   open: boolean
+  position?: DialogPosition | null
 }
 
 export function ResizeDialog({
   defaultMethod,
+  defaultPosition,
   image,
   onApply,
   onClose,
+  onPositionChange,
   open,
+  position,
 }: ResizeDialogProps) {
   const [unit, setUnit] = useState<ResizeUnit>('percent')
   const [widthValue, setWidthValue] = useState('100')
@@ -149,14 +155,35 @@ export function ResizeDialog({
 
   return (
     <EditorDialog
+      defaultPosition={defaultPosition}
       description="Создание изображения в новом размере"
+      footer={
+        <>
+          <button
+            className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
+            onClick={onClose}
+            type="button"
+          >
+            Отмена
+          </button>
+          <button
+            className="h-8 cursor-pointer border border-[#8fbdf0]/45 bg-[#d9e9ff] px-3 text-xs font-semibold text-[#101318] outline-none transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
+            form="resize-dialog-form"
+            type="submit"
+          >
+            Применить
+          </button>
+        </>
+      }
       labelledById="resize-dialog-title"
       onClose={onClose}
+      onPositionChange={onPositionChange}
       open={open}
+      position={position}
       title="Размер изображения"
       widthClassName="w-[min(620px,calc(100vw-32px))]"
     >
-      <form className="grid gap-3" onSubmit={submitForm}>
+      <form className="grid gap-3" id="resize-dialog-form" onSubmit={submitForm}>
         <dl className="grid grid-cols-2 gap-2 text-xs max-[560px]:grid-cols-1">
           <Metric label="До" value={formatPixels(beforePixels)} />
           <Metric label="После" value={formatPixels(afterPixels)} />
@@ -261,21 +288,6 @@ export function ResizeDialog({
           {submitError || validationError || ''}
         </p>
 
-        <div className="flex justify-between gap-2 border-t border-white/[0.08] pt-3">
-          <button
-            className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
-            onClick={onClose}
-            type="button"
-          >
-            Отмена
-          </button>
-          <button
-            className="h-8 cursor-pointer border border-[#8fbdf0]/45 bg-[#d9e9ff] px-3 text-xs font-semibold text-[#101318] outline-none transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
-            type="submit"
-          >
-            Применить
-          </button>
-        </div>
       </form>
     </EditorDialog>
   )

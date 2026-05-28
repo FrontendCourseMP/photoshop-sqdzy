@@ -2,17 +2,28 @@ import { useEffect, useRef, useState } from 'react'
 import { FileMenu } from './file-menu'
 import type { EditorTool } from '../lib/editor-tool'
 import type {
+  FilterOperation,
+  KernelPresetId,
+} from '../lib/image-filtering'
+import type {
   LoadedRasterImage,
   SupportedRasterMimeType,
 } from '../lib/raster-image'
+
+export type TopBarFilterPresetAction = {
+  operation: FilterOperation
+  presetId?: KernelPresetId
+}
 
 type TopBarProps = {
   activeTool: EditorTool
   allChannelsVisible: boolean
   disabled: boolean
   image: LoadedRasterImage | null
+  onApplyFilterPreset: (action: TopBarFilterPresetAction) => void
   onExport: (mimeType: SupportedRasterMimeType) => void
   onOpen: () => void
+  onOpenFilter: () => void
   onOpenLevels: () => void
   onOpenResize: () => void
   onResetChannels: () => void
@@ -31,8 +42,10 @@ export function TopBar({
   allChannelsVisible,
   disabled,
   image,
+  onApplyFilterPreset,
   onExport,
   onOpen,
+  onOpenFilter,
   onOpenLevels,
   onOpenResize,
   onResetChannels,
@@ -40,7 +53,7 @@ export function TopBar({
 }: TopBarProps) {
   return (
     <header className="relative z-50 border-b border-black/55 bg-[#282b31]">
-      <div className="grid min-h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-2 text-[13px] max-[640px]:grid-cols-1 max-[640px]:gap-0">
+      <div className="flex min-h-8 items-center px-2 text-[13px]">
         <nav className="flex min-w-0 items-center overflow-visible">
           <FileMenu
             canExport={Boolean(image)}
@@ -80,6 +93,70 @@ export function TopBar({
           <MenuDropdown
             items={[
               {
+                disabled: !image || disabled,
+                label: 'Повышение резкости',
+                onSelect: () =>
+                  onApplyFilterPreset({
+                    operation: 'convolution',
+                    presetId: 'sharpen',
+                  }),
+              },
+              {
+                disabled: !image || disabled,
+                label: 'Размытие по Гауссу',
+                onSelect: () =>
+                  onApplyFilterPreset({
+                    operation: 'convolution',
+                    presetId: 'gaussian-3x3',
+                  }),
+              },
+              {
+                disabled: !image || disabled,
+                label: 'Прямоугольное размытие',
+                onSelect: () =>
+                  onApplyFilterPreset({
+                    operation: 'convolution',
+                    presetId: 'box-blur',
+                  }),
+              },
+              {
+                disabled: !image || disabled,
+                label: 'Медианный фильтр',
+                onSelect: () =>
+                  onApplyFilterPreset({
+                    operation: 'median',
+                  }),
+              },
+              {
+                disabled: !image || disabled,
+                label: 'Прюитт X',
+                onSelect: () =>
+                  onApplyFilterPreset({
+                    operation: 'convolution',
+                    presetId: 'prewitt-x',
+                  }),
+              },
+              {
+                disabled: !image || disabled,
+                label: 'Прюитт Y',
+                onSelect: () =>
+                  onApplyFilterPreset({
+                    operation: 'convolution',
+                    presetId: 'prewitt-y',
+                  }),
+              },
+              {
+                disabled: !image || disabled,
+                label: 'Custom...',
+                onSelect: onOpenFilter,
+              },
+            ]}
+            label="Фильтр"
+          />
+
+          <MenuDropdown
+            items={[
+              {
                 checked: activeTool === 'cursor',
                 disabled,
                 label: 'Курсор',
@@ -95,12 +172,6 @@ export function TopBar({
             label="Вид"
           />
         </nav>
-
-        <div className="min-w-0 justify-self-center max-[640px]:hidden">
-          <div className="max-w-[52vw] truncate border border-white/[0.1] bg-[#1f2228] px-3 py-1 text-center text-xs text-zinc-300">
-            {image ? image.name : 'Без документа'}
-          </div>
-        </div>
       </div>
     </header>
   )

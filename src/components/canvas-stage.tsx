@@ -1,4 +1,8 @@
-import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import type {
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  RefObject,
+} from 'react'
 import type { EditorTool } from '../lib/editor-tool'
 import type { LoadedRasterImage } from '../lib/raster-image'
 
@@ -8,7 +12,12 @@ type CanvasStageProps = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   image: LoadedRasterImage | null
   isBusy: boolean
+  isPanning: boolean
+  onCanvasContextMenu: (event: ReactMouseEvent<HTMLCanvasElement>) => void
+  onCanvasPointerCancel: (event: ReactPointerEvent<HTMLCanvasElement>) => void
   onCanvasPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void
+  onCanvasPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void
+  onCanvasPointerUp: (event: ReactPointerEvent<HTMLCanvasElement>) => void
   stageRef: RefObject<HTMLDivElement | null>
 }
 
@@ -18,9 +27,22 @@ export function CanvasStage({
   canvasRef,
   image,
   isBusy,
+  isPanning,
+  onCanvasContextMenu,
+  onCanvasPointerCancel,
   onCanvasPointerDown,
+  onCanvasPointerMove,
+  onCanvasPointerUp,
   stageRef,
 }: CanvasStageProps) {
+  const cursorClassName = isPanning
+    ? 'cursor-grabbing'
+    : activeTool === 'eyedropper'
+      ? 'cursor-crosshair'
+      : image
+        ? 'cursor-grab'
+        : 'cursor-default'
+
   return (
     <section className="flex min-h-0 flex-col bg-[#181a1f]">
       <div className="flex min-h-0 flex-1 p-2">
@@ -31,10 +53,12 @@ export function CanvasStage({
           {image ? (
             <canvas
               aria-label={`Просмотр изображения ${image.name}`}
-              className={`block h-full w-full ${
-                activeTool === 'eyedropper' ? 'cursor-crosshair' : 'cursor-default'
-              }`}
+              className={`block h-full w-full touch-none select-none ${cursorClassName}`}
+              onContextMenu={onCanvasContextMenu}
+              onPointerCancel={onCanvasPointerCancel}
               onPointerDown={onCanvasPointerDown}
+              onPointerMove={onCanvasPointerMove}
+              onPointerUp={onCanvasPointerUp}
               ref={canvasRef}
             />
           ) : (

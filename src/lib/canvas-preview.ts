@@ -10,6 +10,11 @@ export type DrawRect = {
   y: number
 }
 
+export type CanvasPanOffset = {
+  x: number
+  y: number
+}
+
 export const EMPTY_STAGE_SIZE: CanvasStageSize = { height: 0, width: 0 }
 
 export function getImageFitRect(input: {
@@ -41,14 +46,17 @@ export function getImageFitRect(input: {
 export function getCenteredImageRect(input: {
   imageHeight: number
   imageWidth: number
+  panOffset?: CanvasPanOffset
   stageHeight: number
   stageWidth: number
 }): DrawRect {
+  const panOffset = input.panOffset ?? { x: 0, y: 0 }
+
   return {
     height: input.imageHeight,
     width: input.imageWidth,
-    x: (input.stageWidth - input.imageWidth) / 2,
-    y: (input.stageHeight - input.imageHeight) / 2,
+    x: (input.stageWidth - input.imageWidth) / 2 + panOffset.x,
+    y: (input.stageHeight - input.imageHeight) / 2 + panOffset.y,
   }
 }
 

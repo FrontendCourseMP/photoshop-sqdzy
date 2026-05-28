@@ -5,15 +5,21 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
 import { CanvasStage } from './components/canvas-stage'
+import { FilterDialog } from './components/filter-dialog'
 import { LevelsDialog } from './components/levels-dialog'
 import { ResizeDialog } from './components/resize-dialog'
 import { SidePanel } from './components/side-panel'
 import { StatusBar } from './components/status-bar'
-import { TopBar } from './components/top-bar'
+import {
+  TopBar,
+  type TopBarFilterPresetAction,
+} from './components/top-bar'
+import type { DialogPosition } from './components/editor-dialog'
 import {
   useCanvasRenderer,
   type RenderedCanvasImage,
@@ -41,6 +47,13 @@ import {
   type InterpolationMethod,
 } from './lib/image-scaling'
 import {
+  applyImageFilterAsync,
+  createDefaultFilterChannelState,
+  getIdentityKernel,
+  getKernelPreset,
+} from './lib/image-filtering'
+import type { CanvasPanOffset } from './lib/canvas-preview'
+import {
   buildDownloadName,
   createRasterImageWithDimensions,
   createRasterImageWithPixels,
@@ -51,6 +64,74 @@ import {
   type SupportedRasterMimeType,
 } from './lib/raster-image'
 import type { EditorTool } from './lib/editor-tool'
+
+type DialogKind = 'filter' | 'levels' | 'resize'
+type DialogPositions = Record<DialogKind, DialogPosition>
+type CanvasPanDragState = {
+  pointerId: number
+  startClientX: number
+  startClientY: number
+  startOffset: CanvasPanOffset
+}
+
+const DEFAULT_DIALOG_POSITION: DialogPosition = { x: 56, y: 48 }
+const DEFAULT_DIALOG_POSITIONS: DialogPositions = {
+  filter: DEFAULT_DIALOG_POSITION,
+  levels: DEFAULT_DIALOG_POSITION,
+  resize: DEFAULT_DIALOG_POSITION,
+}
+const DIALOG_POSITION_STORAGE_KEY = 'graybit-dialog-positions-v1'
+const ZERO_CANVAS_PAN_OFFSET: CanvasPanOffset = { x: 0, y: 0 }
+
+function loadDialogPositions(): DialogPositions {
+  if (typeof window === 'undefined') {
+    return DEFAULT_DIALOG_POSITIONS
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(DIALOG_POSITION_STORAGE_KEY)
+
+    if (!rawValue) {
+      return DEFAULT_DIALOG_POSITIONS
+    }
+
+    const parsedValue = JSON.parse(rawValue) as Partial<DialogPositions>
+
+    return {
+      filter: sanitizeDialogPosition(parsedValue.filter, 'filter'),
+      levels: sanitizeDialogPosition(parsedValue.levels, 'levels'),
+      resize: sanitizeDialogPosition(parsedValue.resize, 'resize'),
+    }
+  } catch {
+    return DEFAULT_DIALOG_POSITIONS
+  }
+}
+
+function persistDialogPositions(positions: DialogPositions): void {
+  try {
+    window.localStorage.setItem(
+      DIALOG_POSITION_STORAGE_KEY,
+      JSON.stringify(positions),
+    )
+  } catch {
+    // localStorage can be unavailable in restricted browser modes.
+  }
+}
+
+function sanitizeDialogPosition(
+  position: DialogPosition | undefined,
+  kind: DialogKind,
+): DialogPosition {
+  if (
+    !position ||
+    !Number.isFinite(position.x) ||
+    !Number.isFinite(position.y)
+  ) {
+    return DEFAULT_DIALOG_POSITIONS[kind]
+  }
+
+  return position
+}
 
 function App() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -67,14 +148,21 @@ function App() {
   const [busyMessage, setBusyMessage] = useState('')
   const [message, setMessage] = useState('Готов к загрузке изображения.')
   const [pixelSample, setPixelSample] = useState<PixelSample | null>(null)
+  const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [isLevelsOpen, setIsLevelsOpen] = useState(false)
   const [isResizeOpen, setIsResizeOpen] = useState(false)
+  const [dialogPositions, setDialogPositions] =
+    useState<DialogPositions>(loadDialogPositions)
   const [displayScalePercent, setDisplayScalePercent] = useState(100)
   const [needsInitialFit, setNeedsInitialFit] = useState(false)
   const [interpolationMethod, setInterpolationMethod] =
     useState<InterpolationMethod>(DEFAULT_INTERPOLATION_METHOD)
   const [renderedImage, setRenderedImage] =
     useState<RenderedCanvasImage | null>(null)
+  const [canvasPanOffset, setCanvasPanOffset] =
+    useState<CanvasPanOffset>(ZERO_CANVAS_PAN_OFFSET)
+  const [isCanvasPanning, setIsCanvasPanning] = useState(false)
+  const canvasPanDragRef = useRef<CanvasPanDragState | null>(null)
   const displayRgbaRef = useRef<Uint8ClampedArray | null>(null)
   const [displayVersion, setDisplayVersion] = useState(0)
   const levelsPreviewRgbaRef = useRef<Uint8ClampedArray | null>(null)
@@ -83,6 +171,21 @@ function App() {
   const allChannelsVisible = useMemo(
     () => (image ? areAllImageChannelsVisible(image.channels, channelState) : true),
     [channelState, image],
+  )
+
+  const changeDialogPosition = useCallback(
+    (kind: DialogKind, position: DialogPosition) => {
+      setDialogPositions((currentPositions) => {
+        const nextPositions = {
+          ...currentPositions,
+          [kind]: position,
+        }
+
+        persistDialogPositions(nextPositions)
+        return nextPositions
+      })
+    },
+    [],
   )
 
   const handleLevelsPreviewChange = useCallback(
@@ -104,15 +207,35 @@ function App() {
 
   const openLevelsDialog = useCallback(() => {
     if (image) {
+      setIsFilterOpen(false)
+      setIsResizeOpen(false)
+      handleLevelsPreviewChange(null)
       setIsLevelsOpen(true)
     }
-  }, [image])
+  }, [handleLevelsPreviewChange, image])
+
+  const closeFilterDialog = useCallback(() => {
+    setIsFilterOpen(false)
+    handleLevelsPreviewChange(null)
+  }, [handleLevelsPreviewChange])
+
+  const openFilterDialog = useCallback(() => {
+    if (image) {
+      setIsLevelsOpen(false)
+      setIsResizeOpen(false)
+      handleLevelsPreviewChange(null)
+      setIsFilterOpen(true)
+    }
+  }, [handleLevelsPreviewChange, image])
 
   const openResizeDialog = useCallback(() => {
     if (image) {
+      setIsFilterOpen(false)
+      setIsLevelsOpen(false)
+      handleLevelsPreviewChange(null)
       setIsResizeOpen(true)
     }
-  }, [image])
+  }, [handleLevelsPreviewChange, image])
 
   const closeResizeDialog = useCallback(() => {
     setIsResizeOpen(false)
@@ -133,6 +256,9 @@ function App() {
         const nextImage = await createRasterImageWithPixels(image, nextRgba)
 
         handleLevelsPreviewChange(null)
+        displayRgbaRef.current = nextImage.rgba
+        setRenderedImage(null)
+        setDisplayVersion((version) => version + 1)
         setImage(nextImage)
         setPixelSample(null)
         setMessage('Уровни применены.')
@@ -150,6 +276,7 @@ function App() {
     canvasRef,
     image,
     onError: setMessage,
+    panOffset: canvasPanOffset,
     renderedImage,
     stageSize,
     onRenderComplete: () => {
@@ -304,10 +431,12 @@ function App() {
           : 100
 
       handleLevelsPreviewChange(null)
+      setIsFilterOpen(false)
       displayRgbaRef.current = nextImage.rgba
       setIsLevelsOpen(false)
       setIsResizeOpen(false)
       setDisplayScalePercent(nextDisplayScalePercent)
+      setCanvasPanOffset(ZERO_CANVAS_PAN_OFFSET)
       setRenderedImage(null)
       setDisplayVersion((version) => version + 1)
       setNeedsInitialFit(!(stageSize.width && stageSize.height))
@@ -348,6 +477,81 @@ function App() {
     } catch (error) {
       setMessage(getErrorMessage(error))
     } finally {
+      setIsBusy(false)
+      setBusyMessage('')
+    }
+  }
+
+  async function applyFilter(nextRgba: Uint8ClampedArray) {
+    if (!image) {
+      return
+    }
+
+    setIsBusy(true)
+    setBusyMessage('Применяю фильтр.')
+    setMessage('Применяю фильтр к изображению...')
+    await waitForNextPaint()
+
+    try {
+      const nextImage = await createRasterImageWithPixels(image, nextRgba)
+
+      handleLevelsPreviewChange(null)
+      displayRgbaRef.current = nextImage.rgba
+      setIsFilterOpen(false)
+      setIsLevelsOpen(false)
+      setRenderedImage(null)
+      setDisplayVersion((version) => version + 1)
+      setImage(nextImage)
+      setPixelSample(null)
+      setMessage('Фильтр применён.')
+    } catch (error) {
+      setMessage(getErrorMessage(error))
+      setIsBusy(false)
+      setBusyMessage('')
+      throw error
+    }
+  }
+
+  async function applyFilterPresetFromMenu(action: TopBarFilterPresetAction) {
+    if (!image) {
+      return
+    }
+
+    const preset =
+      action.operation === 'convolution' && action.presetId
+        ? getKernelPreset(action.presetId)
+        : null
+    const filterLabel =
+      preset?.label ??
+      (action.operation === 'median' ? 'Медианный фильтр' : 'Фильтр')
+
+    setIsBusy(true)
+    setBusyMessage(`Применяю: ${filterLabel}.`)
+    setMessage(`Применяю фильтр: ${filterLabel}...`)
+    await waitForNextPaint()
+
+    try {
+      const nextRgba = await applyImageFilterAsync({
+        channelState: createDefaultFilterChannelState(image.channels),
+        edgeHandling: 'copy',
+        image,
+        kernel: preset?.kernel ?? getIdentityKernel(),
+        operation: action.operation,
+      })
+      const nextImage = await createRasterImageWithPixels(image, nextRgba)
+
+      handleLevelsPreviewChange(null)
+      setIsFilterOpen(false)
+      setIsLevelsOpen(false)
+      setIsResizeOpen(false)
+      displayRgbaRef.current = nextImage.rgba
+      setRenderedImage(null)
+      setDisplayVersion((version) => version + 1)
+      setImage(nextImage)
+      setPixelSample(null)
+      setMessage(`Фильтр применён: ${filterLabel}.`)
+    } catch (error) {
+      setMessage(getErrorMessage(error))
       setIsBusy(false)
       setBusyMessage('')
     }
@@ -405,10 +609,12 @@ function App() {
       })
 
       handleLevelsPreviewChange(null)
+      setIsFilterOpen(false)
       displayRgbaRef.current = nextImage.rgba
       setIsLevelsOpen(false)
       setIsResizeOpen(false)
       setInterpolationMethod(input.method)
+      setCanvasPanOffset(ZERO_CANVAS_PAN_OFFSET)
       setRenderedImage(null)
       setDisplayVersion((version) => version + 1)
       setImage(nextImage)
@@ -441,12 +647,24 @@ function App() {
   function handleCanvasPointerDown(
     event: ReactPointerEvent<HTMLCanvasElement>,
   ) {
-    if (
-      !image ||
-      !renderedImage ||
-      activeTool !== 'eyedropper' ||
-      event.button !== 0
-    ) {
+    if (!image || !renderedImage) {
+      return
+    }
+
+    if (shouldStartCanvasPan(event, activeTool)) {
+      event.preventDefault()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      canvasPanDragRef.current = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startOffset: canvasPanOffset,
+      }
+      setIsCanvasPanning(true)
+      return
+    }
+
+    if (activeTool !== 'eyedropper' || event.button !== 0) {
       return
     }
 
@@ -456,6 +674,7 @@ function App() {
       clientY: event.clientY,
       imageHeight: image.height,
       imageWidth: image.width,
+      panOffset: canvasPanOffset,
       renderedImageHeight: renderedImage.height,
       renderedImageWidth: renderedImage.width,
     })
@@ -473,6 +692,54 @@ function App() {
     )
   }
 
+  function handleCanvasPointerMove(
+    event: ReactPointerEvent<HTMLCanvasElement>,
+  ) {
+    const dragState = canvasPanDragRef.current
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return
+    }
+
+    event.preventDefault()
+    setCanvasPanOffset({
+      x: dragState.startOffset.x + event.clientX - dragState.startClientX,
+      y: dragState.startOffset.y + event.clientY - dragState.startClientY,
+    })
+  }
+
+  function endCanvasPan(event: ReactPointerEvent<HTMLCanvasElement>) {
+    const dragState = canvasPanDragRef.current
+
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    const finalOffset = {
+      x: dragState.startOffset.x + event.clientX - dragState.startClientX,
+      y: dragState.startOffset.y + event.clientY - dragState.startClientY,
+    }
+
+    setCanvasPanOffset(finalOffset)
+    canvasPanDragRef.current = null
+    setIsCanvasPanning(false)
+    setMessage(
+      `Холст смещён: X ${Math.round(finalOffset.x)}, Y ${Math.round(finalOffset.y)}.`,
+    )
+  }
+
+  function handleCanvasContextMenu(
+    event: ReactMouseEvent<HTMLCanvasElement>,
+  ) {
+    if (image) {
+      event.preventDefault()
+    }
+  }
+
   return (
     <div className="h-dvh overflow-hidden bg-[#181a1f] text-zinc-100">
       <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto]">
@@ -481,7 +748,9 @@ function App() {
           allChannelsVisible={allChannelsVisible}
           disabled={isBusy}
           image={image}
+          onApplyFilterPreset={(action) => void applyFilterPresetFromMenu(action)}
           onExport={exportFromUi}
+          onOpenFilter={openFilterDialog}
           onOpenLevels={openLevelsDialog}
           onOpen={openFileDialog}
           onOpenResize={openResizeDialog}
@@ -504,7 +773,12 @@ function App() {
             canvasRef={canvasRef}
             image={image}
             isBusy={isBusy}
+            isPanning={isCanvasPanning}
+            onCanvasContextMenu={handleCanvasContextMenu}
+            onCanvasPointerCancel={endCanvasPan}
             onCanvasPointerDown={handleCanvasPointerDown}
+            onCanvasPointerMove={handleCanvasPointerMove}
+            onCanvasPointerUp={endCanvasPan}
             stageRef={stageRef}
           />
 
@@ -536,20 +810,45 @@ function App() {
         />
 
         <LevelsDialog
+          defaultPosition={DEFAULT_DIALOG_POSITIONS.levels}
           image={image}
           onApply={applyLevels}
           onClose={closeLevelsDialog}
+          onPositionChange={(position) =>
+            changeDialogPosition('levels', position)
+          }
           onPreviewChange={handleLevelsPreviewChange}
           open={isLevelsOpen}
+          position={dialogPositions.levels}
         />
+
+        {isFilterOpen ? (
+          <FilterDialog
+            defaultPosition={DEFAULT_DIALOG_POSITIONS.filter}
+            image={image}
+            onApply={applyFilter}
+            onClose={closeFilterDialog}
+            onPositionChange={(position) =>
+              changeDialogPosition('filter', position)
+            }
+            onPreviewChange={handleLevelsPreviewChange}
+            open={isFilterOpen}
+            position={dialogPositions.filter}
+          />
+        ) : null}
 
         {isResizeOpen ? (
           <ResizeDialog
             defaultMethod={interpolationMethod}
+            defaultPosition={DEFAULT_DIALOG_POSITIONS.resize}
             image={image}
             onApply={(input) => void applyResize(input)}
             onClose={closeResizeDialog}
+            onPositionChange={(position) =>
+              changeDialogPosition('resize', position)
+            }
             open={isResizeOpen}
+            position={dialogPositions.resize}
           />
         ) : null}
       </div>
@@ -598,6 +897,17 @@ function ToolRail({
       />
     </nav>
   )
+}
+
+function shouldStartCanvasPan(
+  event: ReactPointerEvent<HTMLCanvasElement>,
+  activeTool: EditorTool,
+): boolean {
+  if (event.button === 1 || event.button === 2) {
+    return true
+  }
+
+  return event.button === 0 && activeTool === 'cursor'
 }
 
 function RailButton({

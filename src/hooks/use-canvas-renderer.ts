@@ -3,6 +3,7 @@ import {
   getCenteredImageRect,
   drawRgbaImage,
   drawTransparencyGrid,
+  type CanvasPanOffset,
   type CanvasStageSize,
 } from '../lib/canvas-preview'
 import type { LoadedRasterImage } from '../lib/raster-image'
@@ -17,6 +18,7 @@ type UseCanvasRendererOptions = {
   canvasRef: RefObject<HTMLCanvasElement | null>
   image: LoadedRasterImage | null
   onError: (message: string) => void
+  panOffset: CanvasPanOffset
   renderedImage: RenderedCanvasImage | null
   stageSize: CanvasStageSize
   onRenderComplete?: () => void
@@ -26,6 +28,7 @@ export function useCanvasRenderer({
   canvasRef,
   image,
   onError,
+  panOffset,
   renderedImage,
   stageSize,
   onRenderComplete,
@@ -72,6 +75,7 @@ export function useCanvasRenderer({
       const drawRect = getCenteredImageRect({
         imageHeight: renderedImage.height,
         imageWidth: renderedImage.width,
+        panOffset,
         stageHeight: height,
         stageWidth: width,
       })
@@ -107,5 +111,5 @@ export function useCanvasRenderer({
     return () => {
       clearTimeout(timeoutId)
     }
-  }, [canvasRef, image, onError, renderedImage, stageSize])
+  }, [canvasRef, image, onError, panOffset, renderedImage, stageSize])
 }

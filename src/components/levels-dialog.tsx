@@ -3,11 +3,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type ChangeEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
+import { EditorDialog, type DialogPosition } from './editor-dialog'
 import {
   LEVEL_TARGET_LABELS,
   applyLevelsToRgbaAsync,
@@ -28,31 +28,28 @@ import {
 import type { LoadedRasterImage } from '../lib/raster-image'
 
 type LevelsDialogProps = {
+  defaultPosition?: DialogPosition
   image: LoadedRasterImage | null
   onApply: (rgba: Uint8ClampedArray) => Promise<void>
   onClose: () => void
+  onPositionChange?: (position: DialogPosition) => void
   onPreviewChange: (rgba: Uint8ClampedArray | null) => void
   open: boolean
+  position?: DialogPosition | null
 }
 
 type ActiveMarker = 'black' | 'gamma' | 'white'
-type DialogPosition = { x: number; y: number }
-type DialogDragState = {
-  height: number
-  offsetX: number
-  offsetY: number
-  width: number
-}
 
 export function LevelsDialog({
+  defaultPosition,
   image,
   onApply,
   onClose,
+  onPositionChange,
   onPreviewChange,
   open,
+  position,
 }: LevelsDialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null)
-  const dialogDragRef = useRef<DialogDragState | null>(null)
   const [histogramScale, setHistogramScale] =
     useState<HistogramScale>('linear')
   const [histogram, setHistogram] = useState<Uint32Array | null>(null)
@@ -60,8 +57,6 @@ export function LevelsDialog({
   const [isComparingOriginal, setIsComparingOriginal] = useState(false)
   const [isPreviewPending, setIsPreviewPending] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
-  const [dialogPosition, setDialogPosition] =
-    useState<DialogPosition | null>(null)
   const [selectedTarget, setSelectedTarget] = useState<LevelsTarget>('master')
   const maxValue = image ? getLevelsMaxValue(image) : 255
   const [settings, setSettings] = useState<LevelsSettings>(() =>
@@ -72,23 +67,6 @@ export function LevelsDialog({
     [image],
   )
   const selectedAdjustment = settings[selectedTarget]
-
-  useEffect(() => {
-    const dialog = dialogRef.current
-
-    if (!dialog) {
-      return
-    }
-
-    if (open && !dialog.open) {
-      dialog.showModal()
-      return
-    }
-
-    if (!open && dialog.open) {
-      dialog.close()
-    }
-  }, [open])
 
   useEffect(() => {
     if (!open || !image) {
@@ -239,113 +217,66 @@ export function LevelsDialog({
     setHistogramScale(event.target.value as HistogramScale)
   }
 
-  function startDialogDrag(event: ReactPointerEvent<HTMLElement>) {
-    if (event.button !== 0) {
-      return
-    }
-
-    const target = event.target as HTMLElement | null
-
-    if (target?.closest('button, input, select, textarea')) {
-      return
-    }
-
-    const dialog = dialogRef.current
-
-    if (!dialog) {
-      return
-    }
-
-    const rect = dialog.getBoundingClientRect()
-
-    dialogDragRef.current = {
-      height: rect.height,
-      offsetX: event.clientX - rect.left,
-      offsetY: event.clientY - rect.top,
-      width: rect.width,
-    }
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setDialogPosition({ x: rect.left, y: rect.top })
-  }
-
-  function moveDialog(event: ReactPointerEvent<HTMLElement>) {
-    const dragState = dialogDragRef.current
-
-    if (!dragState || !event.currentTarget.hasPointerCapture(event.pointerId)) {
-      return
-    }
-
-    setDialogPosition(
-      clampDialogPosition({
-        height: dragState.height,
-        width: dragState.width,
-        x: event.clientX - dragState.offsetX,
-        y: event.clientY - dragState.offsetY,
-      }),
-    )
-  }
-
-  function endDialogDrag(event: ReactPointerEvent<HTMLElement>) {
-    dialogDragRef.current = null
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-  }
-
-  const dialogStyle: CSSProperties | undefined = dialogPosition
-    ? {
-        left: dialogPosition.x,
-        right: 'auto',
-        top: dialogPosition.y,
-      }
-    : undefined
-
   return (
-    <dialog
-      aria-labelledby="levels-dialog-title"
-      className="fixed left-auto right-4 top-20 m-0 w-[min(680px,calc(100vw-32px))] max-w-none overflow-hidden border border-white/[0.14] bg-[#252831] p-0 text-zinc-100 outline-none backdrop:bg-transparent max-[760px]:right-2 max-[760px]:top-12 max-[760px]:w-[calc(100vw-16px)]"
-      onCancel={(event) => {
-        event.preventDefault()
-        cancelDialog()
-      }}
-      ref={dialogRef}
-      style={dialogStyle}
-    >
-      <div className="grid overflow-hidden">
-        <header
-          className="flex cursor-move select-none items-start justify-between gap-4 border-b border-white/[0.08] px-3 py-2"
-          onPointerCancel={endDialogDrag}
-          onPointerDown={startDialogDrag}
-          onPointerMove={moveDialog}
-          onPointerUp={endDialogDrag}
-          title="Перетащить окно уровней"
-        >
-          <div>
-            <h2
-              className="text-sm font-semibold leading-5 text-zinc-50"
-              id="levels-dialog-title"
+    <EditorDialog
+      closeDisabled={isApplying}
+      defaultPosition={defaultPosition}
+      description="Градационная коррекция входного тонового диапазона"
+      footer={
+        <>
+          <div className="flex min-w-0 gap-2">
+            <button
+              className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isApplying}
+              onClick={resetSettings}
+              type="button"
             >
-              Уровни
-            </h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Градационная коррекция входного тонового диапазона
-            </p>
+              Сброс
+            </button>
+            <button
+              aria-pressed={isComparingOriginal}
+              className="h-8 cursor-pointer border border-white/10 bg-[#2d3037] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-[#383c44] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-[#d9e9ff] aria-pressed:text-[#101318]"
+              disabled={!image || isApplying}
+              onPointerCancel={() => setIsComparingOriginal(false)}
+              onPointerDown={() => setIsComparingOriginal(true)}
+              onPointerLeave={() => setIsComparingOriginal(false)}
+              onPointerUp={() => setIsComparingOriginal(false)}
+              title="Удерживать для сравнения с исходником"
+              type="button"
+            >
+              {isComparingOriginal ? 'До' : 'После'}
+            </button>
           </div>
 
-          <button
-            aria-label="Закрыть уровни"
-            className="h-7 w-7 shrink-0 cursor-pointer border border-white/10 bg-white/[0.04] text-lg leading-none text-zinc-300 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={isApplying}
-            onClick={cancelDialog}
-            onPointerDown={(event) => event.stopPropagation()}
-            type="button"
-          >
-            ×
-          </button>
-        </header>
-
-        <div className="grid min-h-0 gap-3 overflow-hidden p-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={isApplying}
+              onClick={cancelDialog}
+              type="button"
+            >
+              Отмена
+            </button>
+            <button
+              className="h-8 cursor-pointer border border-[#8fbdf0]/45 bg-[#d9e9ff] px-3 text-xs font-semibold text-[#101318] outline-none transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!image || isApplying}
+              onClick={() => void applyDialog()}
+              type="button"
+            >
+              {isApplying ? 'Применяю...' : 'Применить'}
+            </button>
+          </div>
+        </>
+      }
+      labelledById="levels-dialog-title"
+      onClose={cancelDialog}
+      onPositionChange={onPositionChange}
+      open={open}
+      position={position}
+      title="Уровни"
+      widthClassName="w-[min(680px,calc(100vw-32px))]"
+    >
+      <div className="grid min-h-0 gap-3 overflow-hidden">
           <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_168px] gap-3 max-[760px]:grid-cols-1">
             <section className="min-w-0">
               <div className="grid grid-cols-2 gap-3">
@@ -438,52 +369,7 @@ export function LevelsDialog({
           </div>
         </div>
 
-        <footer className="flex items-center justify-between gap-3 border-t border-white/[0.08] px-3 py-2">
-          <div className="flex min-w-0 gap-2">
-            <button
-              className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isApplying}
-              onClick={resetSettings}
-              type="button"
-            >
-              Сброс
-            </button>
-            <button
-              aria-pressed={isComparingOriginal}
-              className="h-8 cursor-pointer border border-white/10 bg-[#2d3037] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-[#383c44] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50 aria-pressed:bg-[#d9e9ff] aria-pressed:text-[#101318]"
-              disabled={!image || isApplying}
-              onPointerCancel={() => setIsComparingOriginal(false)}
-              onPointerDown={() => setIsComparingOriginal(true)}
-              onPointerLeave={() => setIsComparingOriginal(false)}
-              onPointerUp={() => setIsComparingOriginal(false)}
-              title="Удерживать для сравнения с исходником"
-              type="button"
-            >
-              {isComparingOriginal ? 'До' : 'После'}
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="h-8 cursor-pointer border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-zinc-200 outline-none transition hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isApplying}
-              onClick={cancelDialog}
-              type="button"
-            >
-              Отмена
-            </button>
-            <button
-              className="h-8 cursor-pointer border border-[#8fbdf0]/45 bg-[#d9e9ff] px-3 text-xs font-semibold text-[#101318] outline-none transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!image || isApplying}
-              onClick={() => void applyDialog()}
-              type="button"
-            >
-              {isApplying ? 'Применяю...' : 'Применить'}
-            </button>
-          </div>
-        </footer>
-      </div>
-    </dialog>
+    </EditorDialog>
   )
 }
 
@@ -771,22 +657,6 @@ function FormField({
       {children}
     </label>
   )
-}
-
-function clampDialogPosition(input: {
-  height: number
-  width: number
-  x: number
-  y: number
-}): DialogPosition {
-  const padding = 8
-  const maxX = Math.max(padding, window.innerWidth - input.width - padding)
-  const maxY = Math.max(padding, window.innerHeight - input.height - padding)
-
-  return {
-    x: Math.min(maxX, Math.max(padding, input.x)),
-    y: Math.min(maxY, Math.max(padding, input.y)),
-  }
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
